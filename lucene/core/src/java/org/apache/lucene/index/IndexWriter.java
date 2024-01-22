@@ -281,8 +281,8 @@ public class IndexWriter
 
   final DocumentsWriter docWriter;
   private final EventQueue eventQueue = new EventQueue(this);
-  private final MergeScheduler.MergeSource mergeSource = new IndexWriterMergeSource(this);
-  private final AddIndexesMergeSource addIndexesMergeSource = new AddIndexesMergeSource(this);
+  private final MergeScheduler.MergeSource mergeSource = new IndexWriterMergeSource(getIndexWriterMergeSource());
+  private final AddIndexesMergeSource addIndexesMergeSource = new AddIndexesMergeSource(getAddIndexesMergeSource());
 
   private final ReentrantLock writeDocValuesLock = new ReentrantLock();
 
@@ -459,6 +459,25 @@ public class IndexWriter
           eventQueue.add(w -> w.publishFlushedSegments(true));
         }
       };
+
+
+  /**
+   * Creates the merge source. Subclasses may override for different behaviour
+   *
+   * @return IndexWriterMergeSource
+   */
+  protected IndexWriter getIndexWriterMergeSource() {
+    return this;
+  }
+
+  /**
+   * Creates the AddIndexes merge source. Subclasses may override for different behaviour
+   *
+   * @return AddIndexesMergeSource
+   */
+  protected IndexWriter getAddIndexesMergeSource() {
+    return this;
+  }
 
   /**
    * Expert: returns a readonly reader, covering all committed as well as un-committed changes to
