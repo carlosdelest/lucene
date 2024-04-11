@@ -31,7 +31,8 @@ public class IOContext {
     MERGE,
     READ,
     FLUSH,
-    DEFAULT
+    DEFAULT,
+    READ_DIRECT_IO
   };
 
   /** An object of a enumerator Context type */
@@ -59,6 +60,8 @@ public class IOContext {
   public static final IOContext READ = new IOContext(false, false);
 
   public static final IOContext LOAD = new IOContext(false, true);
+
+  public static final IOContext READ_DIRECT_IO = new IOContext(Context.READ_DIRECT_IO);
 
   public IOContext() {
     this(false, false);
@@ -114,6 +117,14 @@ public class IOContext {
     this.flushInfo = ctxt.flushInfo;
     this.readOnce = readOnce;
     this.load = false;
+  }
+
+  public IOContext(IOContext ctxt, Context context) {
+    this.context = context;
+    this.mergeInfo = ctxt.mergeInfo;
+    this.flushInfo = ctxt.flushInfo;
+    this.readOnce = ctxt.readOnce;
+    this.load = ctxt.load;
   }
 
   @Override

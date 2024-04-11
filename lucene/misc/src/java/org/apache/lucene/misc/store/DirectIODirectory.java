@@ -66,6 +66,9 @@ public class DirectIODirectory extends FilterDirectory {
 
   volatile boolean isOpen = true;
 
+  private final boolean useForRead;
+  private final boolean useForMerges;
+
   /**
    * Reference to {@code com.sun.nio.file.ExtendedOpenOption.DIRECT} by reflective class and enum
    * lookup. There are two reasons for using this instead of directly referencing
@@ -106,18 +109,20 @@ public class DirectIODirectory extends FilterDirectory {
   /**
    * Create a new DirectIODirectory for the named location.
    *
-   * @param delegate Directory for non-merges, also used as reference to file system path.
+   * @param delegate        Directory for non-merges, also used as reference to file system path.
    * @param mergeBufferSize Size of buffer to use for merging.
-   * @param minBytesDirect Merges, or files to be opened for reading, smaller than this will not use
-   *     direct IO. See {@link #DEFAULT_MIN_BYTES_DIRECT} and {@link #useDirectIO}.
+   * @param minBytesDirect  Merges, or files to be opened for reading, smaller than this will not use
+   *                        direct IO. See {@link #DEFAULT_MIN_BYTES_DIRECT} and {@link #useDirectIO}.
    * @throws IOException If there is a low-level I/O error
    */
-  public DirectIODirectory(FSDirectory delegate, int mergeBufferSize, long minBytesDirect)
+  public DirectIODirectory(FSDirectory delegate, int mergeBufferSize, long minBytesDirect, boolean useForRead, boolean useForMerges)
       throws IOException {
     super(delegate);
     this.blockSize = Math.toIntExact(Files.getFileStore(delegate.getDirectory()).getBlockSize());
     this.mergeBufferSize = mergeBufferSize;
     this.minBytesDirect = minBytesDirect;
+    this.useForRead = useForRead;
+    this.useForMerges = useForMerges;
   }
 
   /**
@@ -127,7 +132,11 @@ public class DirectIODirectory extends FilterDirectory {
    * @throws IOException If there is a low-level I/O error
    */
   public DirectIODirectory(FSDirectory delegate) throws IOException {
-    this(delegate, DEFAULT_MERGE_BUFFER_SIZE, DEFAULT_MIN_BYTES_DIRECT);
+    this(delegate, DEFAULT_MERGE_BUFFER_SIZE, DEFAULT_MIN_BYTES_DIRECT, false, false);
+  }
+
+  public DirectIODirectory(FSDirectory delegate, boolean useForRead, boolean useForMerges) throws IOException {
+    this(delegate, DEFAULT_MERGE_BUFFER_SIZE, DEFAULT_MIN_BYTES_DIRECT, useForRead, useForMerges);
   }
 
   /**
@@ -158,9 +167,11 @@ public class DirectIODirectory extends FilterDirectory {
    *     requested from delegate directory.
    */
   protected boolean useDirectIO(String name, IOContext context, OptionalLong fileLength) {
-    return context.context == Context.MERGE
-        && context.mergeInfo.estimatedMergeBytes >= minBytesDirect
-        && fileLength.orElse(minBytesDirect) >= minBytesDirect;
+    return (useForMerges && (context.context == Context.MERGE
+            && context.mergeInfo.estimatedMergeBytes >= minBytesDirect
+            && fileLength.orElse(minBytesDirect) >= minBytesDirect))
+            ||
+            (useForRead && (context.context == Context.READ_DIRECT_IO));
   }
 
   @Override
