@@ -60,6 +60,7 @@ public class Word2VecSynonymProvider {
         HnswGraphBuilder.create(
             scorerSupplier,
             DEFAULT_MAX_CONN,
+            0,
             DEFAULT_BEAM_WIDTH,
             HnswGraphBuilder.randSeed,
             word2VecModel.size());

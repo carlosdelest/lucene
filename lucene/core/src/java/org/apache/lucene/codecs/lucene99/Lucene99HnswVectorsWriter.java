@@ -72,6 +72,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
   private final SegmentWriteState segmentWriteState;
   private final IndexOutput meta, vectorIndex;
   private final int M;
+  private final int minConn;
   private final int beamWidth;
   private final FlatVectorsWriter flatVectorWriter;
   private final int numMergeWorkers;
@@ -83,12 +84,14 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
   public Lucene99HnswVectorsWriter(
       SegmentWriteState state,
       int M,
+      int minConn,
       int beamWidth,
       FlatVectorsWriter flatVectorWriter,
       int numMergeWorkers,
       TaskExecutor mergeExec)
       throws IOException {
     this.M = M;
+    this.minConn = minConn;
     this.flatVectorWriter = flatVectorWriter;
     this.beamWidth = beamWidth;
     this.numMergeWorkers = numMergeWorkers;
@@ -137,6 +140,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
             flatVectorWriter.addField(fieldInfo),
             fieldInfo,
             M,
+            minConn,
             beamWidth,
             segmentWriteState.infoStream);
     fields.add(newField);
@@ -529,18 +533,19 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
       int numParallelMergeWorkers) {
     if (mergeExec != null) {
       return new ConcurrentHnswMerger(
-          fieldInfo, scorerSupplier, M, beamWidth, mergeExec, numMergeWorkers);
+          fieldInfo, scorerSupplier, M, minConn, beamWidth, mergeExec, numMergeWorkers);
     }
     if (parallelMergeTaskExecutor != null) {
       return new ConcurrentHnswMerger(
           fieldInfo,
           scorerSupplier,
           M,
+          minConn,
           beamWidth,
           parallelMergeTaskExecutor,
           numParallelMergeWorkers);
     }
-    return new IncrementalHnswGraphMerger(fieldInfo, scorerSupplier, M, beamWidth);
+    return new IncrementalHnswGraphMerger(fieldInfo, scorerSupplier, M, minConn, beamWidth);
   }
 
   @Override
@@ -575,6 +580,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
         FlatFieldVectorsWriter<?> flatFieldVectorsWriter,
         FieldInfo fieldInfo,
         int M,
+        int minConn,
         int beamWidth,
         InfoStream infoStream)
         throws IOException {
@@ -585,6 +591,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
                 (FlatFieldVectorsWriter<byte[]>) flatFieldVectorsWriter,
                 fieldInfo,
                 M,
+                minConn,
                 beamWidth,
                 infoStream);
         case FLOAT32 ->
@@ -593,6 +600,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
                 (FlatFieldVectorsWriter<float[]>) flatFieldVectorsWriter,
                 fieldInfo,
                 M,
+                minConn,
                 beamWidth,
                 infoStream);
       };
@@ -604,6 +612,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
         FlatFieldVectorsWriter<T> flatFieldVectorsWriter,
         FieldInfo fieldInfo,
         int M,
+        int minConn,
         int beamWidth,
         InfoStream infoStream)
         throws IOException {
@@ -625,7 +634,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
           };
       this.scorer = scorerSupplier.scorer();
       hnswGraphBuilder =
-          HnswGraphBuilder.create(scorerSupplier, M, beamWidth, HnswGraphBuilder.randSeed);
+          HnswGraphBuilder.create(scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed);
       hnswGraphBuilder.setInfoStream(infoStream);
       this.flatFieldVectorsWriter = Objects.requireNonNull(flatFieldVectorsWriter);
     }

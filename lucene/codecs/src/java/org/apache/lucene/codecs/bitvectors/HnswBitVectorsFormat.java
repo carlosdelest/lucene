@@ -137,6 +137,7 @@ public final class HnswBitVectorsFormat extends KnnVectorsFormat {
         new Lucene99HnswVectorsWriter(
             state,
             maxConn,
+            0,
             beamWidth,
             flatVectorsFormat.fieldsWriter(state),
             numMergeWorkers,

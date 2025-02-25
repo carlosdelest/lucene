@@ -123,6 +123,8 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
    */
   private final int maxConn;
 
+  private final int minConn;
+
   /**
    * The number of candidate neighbors to track while searching the graph for each newly inserted
    * node. Defaults to {@link Lucene99HnswVectorsFormat#DEFAULT_BEAM_WIDTH}. See {@link HnswGraph}
@@ -139,7 +141,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
 
   /** Constructs a format using default graph construction parameters */
   public Lucene99HnswVectorsFormat() {
-    this(DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, DEFAULT_NUM_MERGE_WORKER, null);
+    this(DEFAULT_MAX_CONN, 0, DEFAULT_BEAM_WIDTH, DEFAULT_NUM_MERGE_WORKER, null);
   }
 
   /**
@@ -149,7 +151,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
    * @param beamWidth the size of the queue maintained during graph construction.
    */
   public Lucene99HnswVectorsFormat(int maxConn, int beamWidth) {
-    this(maxConn, beamWidth, DEFAULT_NUM_MERGE_WORKER, null);
+    this(maxConn, 0, beamWidth, DEFAULT_NUM_MERGE_WORKER, null);
   }
 
   /**
@@ -164,7 +166,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
    *     MergeScheduler#getIntraMergeExecutor(MergePolicy.OneMerge)} is used.
    */
   public Lucene99HnswVectorsFormat(
-      int maxConn, int beamWidth, int numMergeWorkers, ExecutorService mergeExec) {
+      int maxConn, int minConn, int beamWidth, int numMergeWorkers, ExecutorService mergeExec) {
     super("Lucene99HnswVectorsFormat");
     if (maxConn <= 0 || maxConn > MAXIMUM_MAX_CONN) {
       throw new IllegalArgumentException(
@@ -181,6 +183,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
               + beamWidth);
     }
     this.maxConn = maxConn;
+    this.minConn = minConn;
     this.beamWidth = beamWidth;
     if (numMergeWorkers == 1 && mergeExec != null) {
       throw new IllegalArgumentException(
@@ -199,6 +202,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
     return new Lucene99HnswVectorsWriter(
         state,
         maxConn,
+        minConn,
         beamWidth,
         flatVectorsFormat.fieldsWriter(state),
         numMergeWorkers,

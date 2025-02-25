@@ -49,6 +49,7 @@ public class HnswConcurrentMergeBuilder implements HnswBuilder {
       TaskExecutor taskExecutor,
       int numWorker,
       RandomVectorScorerSupplier scorerSupplier,
+      int minConn,
       int beamWidth,
       OnHeapHnswGraph hnsw,
       BitSet initializedNodes)
@@ -61,6 +62,7 @@ public class HnswConcurrentMergeBuilder implements HnswBuilder {
       workers[i] =
           new ConcurrentMergeWorker(
               scorerSupplier.copy(),
+              minConn,
               beamWidth,
               HnswGraphBuilder.randSeed,
               hnsw,
@@ -146,6 +148,7 @@ public class HnswConcurrentMergeBuilder implements HnswBuilder {
 
     private ConcurrentMergeWorker(
         RandomVectorScorerSupplier scorerSupplier,
+        int minConn,
         int beamWidth,
         long seed,
         OnHeapHnswGraph hnsw,
@@ -160,7 +163,7 @@ public class HnswConcurrentMergeBuilder implements HnswBuilder {
           hnsw,
           hnswLock,
           new MergeSearcher(
-              new NeighborQueue(beamWidth, true), hnswLock, new FixedBitSet(hnsw.maxNodeId() + 1)), true);
+              new NeighborQueue(beamWidth, true), hnswLock, new FixedBitSet(hnsw.maxNodeId() + 1)), minConn);
       this.workProgress = workProgress;
       this.initializedNodes = initializedNodes;
       this.scorer = scorerSupplier.scorer();

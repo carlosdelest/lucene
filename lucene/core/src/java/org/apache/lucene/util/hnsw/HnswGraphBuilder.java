@@ -18,6 +18,7 @@
 package org.apache.lucene.util.hnsw;
 
 import static java.lang.Math.log;
+import static java.lang.Math.min;
 import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
 
 import java.io.IOException;
@@ -68,7 +69,7 @@ public class HnswGraphBuilder implements HnswBuilder {
   private final GraphBuilderKnnCollector entryCandidates; // for upper levels of graph search
   private final GraphBuilderKnnCollector
       beamCandidates; // for levels of graph where we add the node
-  private final boolean addPrunedConnections;
+  private final int minConn;
 
   protected final OnHeapHnswGraph hnsw;
   protected final HnswLock hnswLock;
@@ -77,21 +78,15 @@ public class HnswGraphBuilder implements HnswBuilder {
   private boolean frozen;
 
   public static HnswGraphBuilder create(
-      RandomVectorScorerSupplier scorerSupplier, int M, int beamWidth, long seed)
+      RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed)
       throws IOException {
-    return create(scorerSupplier, M, beamWidth, seed, -1, true);
+    return create(scorerSupplier, M, minConn, beamWidth, seed, -1);
   }
 
   public static HnswGraphBuilder create(
-      RandomVectorScorerSupplier scorerSupplier, int M, int beamWidth, long seed, int graphSize)
-      throws IOException {
-    return create(scorerSupplier, M, beamWidth, seed, graphSize, true);
-  }
-
-  public static HnswGraphBuilder create(
-          RandomVectorScorerSupplier scorerSupplier, int M, int beamWidth, long seed, int graphSize, boolean addPrunedConnections)
+          RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, int graphSize)
           throws IOException {
-    return new HnswGraphBuilder(scorerSupplier, M, beamWidth, seed, graphSize, addPrunedConnections);
+    return new HnswGraphBuilder(scorerSupplier, M, minConn, beamWidth, seed, graphSize);
   }
 
   /**
@@ -107,13 +102,13 @@ public class HnswGraphBuilder implements HnswBuilder {
    * @param graphSize size of graph, if unknown, pass in -1
    */
   protected HnswGraphBuilder(
-      RandomVectorScorerSupplier scorerSupplier, int M, int beamWidth, long seed, int graphSize, boolean addPrunedConnections)
+      RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, int graphSize)
       throws IOException {
-    this(scorerSupplier, beamWidth, seed, new OnHeapHnswGraph(M, graphSize), addPrunedConnections);
+    this(scorerSupplier, beamWidth, seed, new OnHeapHnswGraph(M, graphSize), minConn);
   }
 
   protected HnswGraphBuilder(
-      RandomVectorScorerSupplier scorerSupplier, int beamWidth, long seed, OnHeapHnswGraph hnsw, boolean addPrunedConnections)
+      RandomVectorScorerSupplier scorerSupplier, int beamWidth, long seed, OnHeapHnswGraph hnsw, int minConn)
       throws IOException {
     this(
         scorerSupplier,
@@ -122,7 +117,7 @@ public class HnswGraphBuilder implements HnswBuilder {
         hnsw,
         null,
         new HnswGraphSearcher(new NeighborQueue(beamWidth, true), new FixedBitSet(hnsw.size())),
-            addPrunedConnections);
+            minConn);
   }
 
   /**
@@ -134,7 +129,7 @@ public class HnswGraphBuilder implements HnswBuilder {
    * @param seed                 the seed for a random number generator used during graph construction. Provide this
    *                             to ensure repeatable construction.
    * @param hnsw                 the graph to build, can be previously initialized
-   * @param addPrunedConnections
+   * @param minConn
    */
   protected HnswGraphBuilder(
           RandomVectorScorerSupplier scorerSupplier,
@@ -143,7 +138,7 @@ public class HnswGraphBuilder implements HnswBuilder {
           OnHeapHnswGraph hnsw,
           HnswLock hnswLock,
           HnswGraphSearcher graphSearcher,
-          boolean addPrunedConnections)
+          int minConn)
       throws IOException {
     if (hnsw.maxConn() <= 0) {
       throw new IllegalArgumentException("M (max connections) must be positive");
@@ -162,7 +157,7 @@ public class HnswGraphBuilder implements HnswBuilder {
     this.graphSearcher = graphSearcher;
     entryCandidates = new GraphBuilderKnnCollector(1);
     beamCandidates = new GraphBuilderKnnCollector(beamWidth);
-    this.addPrunedConnections = addPrunedConnections;
+    this.minConn = minConn;
   }
 
   @Override
@@ -394,7 +389,7 @@ public class HnswGraphBuilder implements HnswBuilder {
     }
     // Add pruned connections if needed
     boolean unsorted = false;
-    for (int i = candidates.size() - 1; addPrunedConnections && neighbors.size() < maxConnOnLevel && i >= 0; i--) {
+    for (int i = candidates.size() - 1; neighbors.size() < minConn && neighbors.size() < maxConnOnLevel && i >= 0; i--) {
       if (mask[i] == false) {
         mask[i] = true;
         int cNode = candidates.nodes()[i];

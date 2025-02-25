@@ -270,6 +270,7 @@ public class RandomCodec extends AssertingCodec {
         new Lucene99HnswVectorsFormat(
             TestUtil.nextInt(random, 5, 50),
             TestUtil.nextInt(random, 10, 50),
+            TestUtil.nextInt(random, 0, 50),
             concurrentKnnMerging ? TestUtil.nextInt(random, 2, 8) : 1,
             concurrentKnnMerging ? ForkJoinPool.commonPool() : null),
         new Lucene99HnswScalarQuantizedVectorsFormat(

@@ -43,6 +43,7 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
   protected final FieldInfo fieldInfo;
   protected final RandomVectorScorerSupplier scorerSupplier;
   protected final int M;
+  protected final int minConn;
   protected final int beamWidth;
 
   protected KnnVectorsReader initReader;
@@ -53,10 +54,11 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
    * @param fieldInfo FieldInfo for the field being merged
    */
   public IncrementalHnswGraphMerger(
-      FieldInfo fieldInfo, RandomVectorScorerSupplier scorerSupplier, int M, int beamWidth) {
+      FieldInfo fieldInfo, RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth) {
     this.fieldInfo = fieldInfo;
     this.scorerSupplier = scorerSupplier;
     this.M = M;
+    this.minConn = minConn;
     this.beamWidth = beamWidth;
   }
 
@@ -113,13 +115,13 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
       throws IOException {
     if (initReader == null) {
       return HnswGraphBuilder.create(
-          scorerSupplier, M, beamWidth, HnswGraphBuilder.randSeed, maxOrd);
+          scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, maxOrd);
     }
 
     HnswGraph initializerGraph = ((HnswGraphProvider) initReader).getGraph(fieldInfo.name);
     if (initializerGraph.size() == 0) {
       return HnswGraphBuilder.create(
-          scorerSupplier, M, beamWidth, HnswGraphBuilder.randSeed, maxOrd);
+          scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, maxOrd);
     }
 
     BitSet initializedNodes = new FixedBitSet(maxOrd);

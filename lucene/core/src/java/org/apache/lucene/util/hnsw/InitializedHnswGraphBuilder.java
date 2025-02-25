@@ -94,7 +94,7 @@ public final class InitializedHnswGraphBuilder extends HnswGraphBuilder {
       OnHeapHnswGraph initializedGraph,
       BitSet initializedNodes)
       throws IOException {
-    super(scorerSupplier, beamWidth, seed, initializedGraph, true);
+    super(scorerSupplier, beamWidth, seed, initializedGraph, 0);
     this.initializedNodes = initializedNodes;
   }
 
