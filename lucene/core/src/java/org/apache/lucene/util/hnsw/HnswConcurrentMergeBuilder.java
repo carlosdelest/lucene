@@ -160,7 +160,7 @@ public class HnswConcurrentMergeBuilder implements HnswBuilder {
           hnsw,
           hnswLock,
           new MergeSearcher(
-              new NeighborQueue(beamWidth, true), hnswLock, new FixedBitSet(hnsw.maxNodeId() + 1)));
+              new NeighborQueue(beamWidth, true), hnswLock, new FixedBitSet(hnsw.maxNodeId() + 1)), true);
       this.workProgress = workProgress;
       this.initializedNodes = initializedNodes;
       this.scorer = scorerSupplier.scorer();
