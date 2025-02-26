@@ -45,6 +45,7 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
   protected final int M;
   protected final int minConn;
   protected final int beamWidth;
+  protected final boolean extendCandidates;
 
   protected KnnVectorsReader initReader;
   protected MergeState.DocMap initDocMap;
@@ -54,12 +55,13 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
    * @param fieldInfo FieldInfo for the field being merged
    */
   public IncrementalHnswGraphMerger(
-      FieldInfo fieldInfo, RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth) {
+      FieldInfo fieldInfo, RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, boolean extendCandidates) {
     this.fieldInfo = fieldInfo;
     this.scorerSupplier = scorerSupplier;
     this.M = M;
     this.minConn = minConn;
     this.beamWidth = beamWidth;
+    this.extendCandidates = extendCandidates;
   }
 
   /**
@@ -115,25 +117,27 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
       throws IOException {
     if (initReader == null) {
       return HnswGraphBuilder.create(
-          scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, maxOrd);
+          scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, maxOrd, extendCandidates);
     }
 
     HnswGraph initializerGraph = ((HnswGraphProvider) initReader).getGraph(fieldInfo.name);
     if (initializerGraph.size() == 0) {
       return HnswGraphBuilder.create(
-          scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, maxOrd);
+          scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, maxOrd, extendCandidates);
     }
 
     BitSet initializedNodes = new FixedBitSet(maxOrd);
     int[] oldToNewOrdinalMap = getNewOrdMapping(mergedVectorValues, initializedNodes);
     return InitializedHnswGraphBuilder.fromGraph(
         scorerSupplier,
+        minConn,
         beamWidth,
         HnswGraphBuilder.randSeed,
         initializerGraph,
         oldToNewOrdinalMap,
         initializedNodes,
-        maxOrd);
+        maxOrd,
+        extendCandidates);
   }
 
   @Override

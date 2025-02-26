@@ -50,7 +50,8 @@ class Lucene99RWHnswScalarQuantizationVectorsFormat
         Lucene99HnswVectorsFormat.DEFAULT_BEAM_WIDTH,
         flatVectorsFormat.fieldsWriter(state),
         1,
-        null);
+        null,
+        false);
   }
 
   static class Lucene99RWScalarQuantizedFormat extends Lucene99ScalarQuantizedVectorsFormat {

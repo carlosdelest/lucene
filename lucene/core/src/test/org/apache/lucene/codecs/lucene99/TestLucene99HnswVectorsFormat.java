@@ -59,6 +59,6 @@ public class TestLucene99HnswVectorsFormat extends BaseKnnVectorsFormatTestCase 
     expectThrows(IllegalArgumentException.class, () -> new Lucene99HnswVectorsFormat(20, 3201));
     expectThrows(
         IllegalArgumentException.class,
-        () -> new Lucene99HnswVectorsFormat(20, 0, 100, 1, new SameThreadExecutorService()));
+        () -> new Lucene99HnswVectorsFormat(20, 0, 100, 1, new SameThreadExecutorService(), false));
   }
 }

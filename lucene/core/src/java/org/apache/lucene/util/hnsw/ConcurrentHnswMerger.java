@@ -40,8 +40,9 @@ public class ConcurrentHnswMerger extends IncrementalHnswGraphMerger {
       int minConn,
       int beamWidth,
       TaskExecutor taskExecutor,
-      int numWorker) {
-    super(fieldInfo, scorerSupplier, M, minConn, beamWidth);
+      int numWorker,
+      boolean extendCandidates) {
+    super(fieldInfo, scorerSupplier, M, minConn, beamWidth, extendCandidates);
     this.taskExecutor = taskExecutor;
     this.numWorker = numWorker;
   }
@@ -65,6 +66,6 @@ public class ConcurrentHnswMerger extends IncrementalHnswGraphMerger {
       }
     }
     return new HnswConcurrentMergeBuilder(
-        taskExecutor, numWorker, scorerSupplier, minConn, beamWidth, graph, initializedNodes);
+        taskExecutor, numWorker, scorerSupplier, minConn, beamWidth, graph, initializedNodes, extendCandidates);
   }
 }

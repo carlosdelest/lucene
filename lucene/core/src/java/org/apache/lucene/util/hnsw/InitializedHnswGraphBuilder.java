@@ -46,19 +46,22 @@ public final class InitializedHnswGraphBuilder extends HnswGraphBuilder {
    */
   public static InitializedHnswGraphBuilder fromGraph(
       RandomVectorScorerSupplier scorerSupplier,
+      int minConn,
       int beamWidth,
       long seed,
       HnswGraph initializerGraph,
       int[] newOrdMap,
       BitSet initializedNodes,
-      int totalNumberOfVectors)
+      int totalNumberOfVectors,
+      boolean extendCandidates)
       throws IOException {
     return new InitializedHnswGraphBuilder(
         scorerSupplier,
+        minConn,
         beamWidth,
         seed,
         initGraph(initializerGraph, newOrdMap, totalNumberOfVectors),
-        initializedNodes);
+        initializedNodes, extendCandidates);
   }
 
   public static OnHeapHnswGraph initGraph(
@@ -89,12 +92,14 @@ public final class InitializedHnswGraphBuilder extends HnswGraphBuilder {
 
   public InitializedHnswGraphBuilder(
       RandomVectorScorerSupplier scorerSupplier,
+      int minConn,
       int beamWidth,
       long seed,
       OnHeapHnswGraph initializedGraph,
-      BitSet initializedNodes)
+      BitSet initializedNodes,
+      boolean extendCandidates)
       throws IOException {
-    super(scorerSupplier, beamWidth, seed, initializedGraph, 0);
+    super(scorerSupplier, beamWidth, seed, initializedGraph, minConn, extendCandidates);
     this.initializedNodes = initializedNodes;
   }
 

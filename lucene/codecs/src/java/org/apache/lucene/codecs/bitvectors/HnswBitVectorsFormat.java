@@ -141,7 +141,8 @@ public final class HnswBitVectorsFormat extends KnnVectorsFormat {
             beamWidth,
             flatVectorsFormat.fieldsWriter(state),
             numMergeWorkers,
-            mergeExec));
+            mergeExec,
+            false));
   }
 
   @Override

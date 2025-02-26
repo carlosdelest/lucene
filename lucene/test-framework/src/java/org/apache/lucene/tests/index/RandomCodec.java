@@ -272,7 +272,8 @@ public class RandomCodec extends AssertingCodec {
             TestUtil.nextInt(random, 10, 50),
             TestUtil.nextInt(random, 0, 50),
             concurrentKnnMerging ? TestUtil.nextInt(random, 2, 8) : 1,
-            concurrentKnnMerging ? ForkJoinPool.commonPool() : null),
+            concurrentKnnMerging ? ForkJoinPool.commonPool() : null,
+            random.nextBoolean()),
         new Lucene99HnswScalarQuantizedVectorsFormat(
             TestUtil.nextInt(random, 5, 50),
             TestUtil.nextInt(random, 10, 50),
@@ -280,7 +281,8 @@ public class RandomCodec extends AssertingCodec {
             7,
             false,
             randomConfidenceInterval(random),
-            concurrentKnnMerging ? ForkJoinPool.commonPool() : null),
+            concurrentKnnMerging ? ForkJoinPool.commonPool() : null,
+            random.nextBoolean()),
         // TODO: also test 4-bit quantization, but this must somehow be restricted to even-length
         // fields
         /*

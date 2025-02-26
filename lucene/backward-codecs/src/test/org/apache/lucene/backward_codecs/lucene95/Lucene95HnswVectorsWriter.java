@@ -470,7 +470,7 @@ public final class Lucene95HnswVectorsWriter extends KnnVectorsWriter {
         }
         // build graph
         IncrementalHnswGraphMerger merger =
-            new IncrementalHnswGraphMerger(fieldInfo, scorerSupplier, M, 0, beamWidth);
+            new IncrementalHnswGraphMerger(fieldInfo, scorerSupplier, M, 0, beamWidth, false);
         for (int i = 0; i < mergeState.liveDocs.length; i++) {
           if (hasVectorValues(mergeState.fieldInfos[i], fieldInfo.name)) {
             merger.addReader(
@@ -718,7 +718,7 @@ public final class Lucene95HnswVectorsWriter extends KnnVectorsWriter {
                     FloatVectorValues.fromFloats((List<float[]>) vectors, dim));
           };
       hnswGraphBuilder =
-          HnswGraphBuilder.create(scorerSupplier, M, 0, beamWidth, HnswGraphBuilder.randSeed);
+          HnswGraphBuilder.create(scorerSupplier, M, 0, beamWidth, HnswGraphBuilder.randSeed, false);
       hnswGraphBuilder.setInfoStream(infoStream);
     }
 

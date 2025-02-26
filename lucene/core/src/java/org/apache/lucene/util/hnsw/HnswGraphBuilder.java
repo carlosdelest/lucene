@@ -22,11 +22,7 @@ import static java.lang.Math.min;
 import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
 
 import java.io.IOException;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.SplittableRandom;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import org.apache.lucene.search.KnnCollector;
@@ -76,17 +72,18 @@ public class HnswGraphBuilder implements HnswBuilder {
 
   private InfoStream infoStream = InfoStream.getDefault();
   private boolean frozen;
+  private final boolean extendCandidates;
 
   public static HnswGraphBuilder create(
-      RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed)
+      RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, boolean extendCandidates)
       throws IOException {
-    return create(scorerSupplier, M, minConn, beamWidth, seed, -1);
+    return create(scorerSupplier, M, minConn, beamWidth, seed, -1, extendCandidates);
   }
 
   public static HnswGraphBuilder create(
-          RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, int graphSize)
+          RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, int graphSize, boolean extendCandidates)
           throws IOException {
-    return new HnswGraphBuilder(scorerSupplier, M, minConn, beamWidth, seed, graphSize);
+    return new HnswGraphBuilder(scorerSupplier, M, minConn, beamWidth, seed, graphSize, extendCandidates);
   }
 
   /**
@@ -102,13 +99,13 @@ public class HnswGraphBuilder implements HnswBuilder {
    * @param graphSize size of graph, if unknown, pass in -1
    */
   protected HnswGraphBuilder(
-      RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, int graphSize)
+      RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, int graphSize, boolean extendCandidates)
       throws IOException {
-    this(scorerSupplier, beamWidth, seed, new OnHeapHnswGraph(M, graphSize), minConn);
+    this(scorerSupplier, beamWidth, seed, new OnHeapHnswGraph(M, graphSize), minConn, extendCandidates);
   }
 
   protected HnswGraphBuilder(
-      RandomVectorScorerSupplier scorerSupplier, int beamWidth, long seed, OnHeapHnswGraph hnsw, int minConn)
+      RandomVectorScorerSupplier scorerSupplier, int beamWidth, long seed, OnHeapHnswGraph hnsw, int minConn, boolean extendCandidates)
       throws IOException {
     this(
         scorerSupplier,
@@ -117,7 +114,7 @@ public class HnswGraphBuilder implements HnswBuilder {
         hnsw,
         null,
         new HnswGraphSearcher(new NeighborQueue(beamWidth, true), new FixedBitSet(hnsw.size())),
-            minConn);
+            minConn, extendCandidates);
   }
 
   /**
@@ -138,7 +135,8 @@ public class HnswGraphBuilder implements HnswBuilder {
           OnHeapHnswGraph hnsw,
           HnswLock hnswLock,
           HnswGraphSearcher graphSearcher,
-          int minConn)
+          int minConn,
+          boolean extendCandidates)
       throws IOException {
     if (hnsw.maxConn() <= 0) {
       throw new IllegalArgumentException("M (max connections) must be positive");
@@ -158,6 +156,7 @@ public class HnswGraphBuilder implements HnswBuilder {
     entryCandidates = new GraphBuilderKnnCollector(1);
     beamCandidates = new GraphBuilderKnnCollector(beamWidth);
     this.minConn = minConn;
+    this.extendCandidates = extendCandidates;
   }
 
   @Override
@@ -334,7 +333,7 @@ public class HnswGraphBuilder implements HnswBuilder {
     NeighborArray neighbors = hnsw.getNeighbors(level, node);
     assert neighbors.size() == 0; // new node
     int maxConnOnLevel = level == 0 ? M * 2 : M;
-    boolean[] mask = selectAndLinkDiverse(neighbors, candidates, maxConnOnLevel, scorer);
+    boolean[] mask = selectAndLinkDiverse(neighbors, candidates, maxConnOnLevel, scorer, level);
 
     // Link the selected nodes to the new node, and the new node to the selected nodes (again
     // applying diversity heuristic)
@@ -366,11 +365,15 @@ public class HnswGraphBuilder implements HnswBuilder {
    * are selected
    */
   private boolean[] selectAndLinkDiverse(
-      NeighborArray neighbors,
-      NeighborArray candidates,
-      int maxConnOnLevel,
-      UpdateableRandomVectorScorer scorer)
+          NeighborArray neighbors,
+          NeighborArray candidates,
+          int maxConnOnLevel,
+          UpdateableRandomVectorScorer scorer, 
+          int level)
       throws IOException {
+    if (extendCandidates) {
+      candidates = extendCandidates(level, candidates, scorer);
+    }
     boolean[] mask = new boolean[candidates.size()];
     // Select the best maxConnOnLevel neighbors of the new node, applying the diversity heuristic
     for (int i = candidates.size() - 1; neighbors.size() < maxConnOnLevel && i >= 0; i--) {
@@ -402,6 +405,30 @@ public class HnswGraphBuilder implements HnswBuilder {
         neighbors.sort(scorer);
     }
     return mask;
+  }
+
+  private NeighborArray extendCandidates(
+          int level, NeighborArray candidates, UpdateableRandomVectorScorer scorer)
+          throws IOException {
+
+    Set<Integer> candidateSet = new HashSet<>();
+    for(int i = candidates.size() - 1; i >= 0; i--) {
+      int node = candidates.nodes()[i];
+      candidateSet.add(node);
+      NeighborArray secondNeighbors = getGraph().getNeighbors(level, node);
+      for (int j = 0; j < secondNeighbors.size(); j++) {
+        int nbr = secondNeighbors.nodes()[j];
+        if (candidateSet.contains(nbr) == false) {
+          candidateSet.add(nbr);
+        }
+      }
+    }
+    NeighborArray expandedCandidates = new NeighborArray(candidateSet.size(), false);
+    for (int node : candidateSet) {
+      expandedCandidates.addOutOfOrder(node, scorer.score(node));
+    }
+    expandedCandidates.sort(scorer);
+    return expandedCandidates;
   }
 
   private static void popToScratch(GraphBuilderKnnCollector candidates, NeighborArray scratch) {

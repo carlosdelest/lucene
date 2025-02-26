@@ -63,7 +63,8 @@ public class Word2VecSynonymProvider {
             0,
             DEFAULT_BEAM_WIDTH,
             HnswGraphBuilder.randSeed,
-            word2VecModel.size());
+            word2VecModel.size(),
+                false);
     this.hnswGraph = builder.build(word2VecModel.size());
   }
 

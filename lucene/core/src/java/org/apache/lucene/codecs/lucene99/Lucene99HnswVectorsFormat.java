@@ -132,6 +132,8 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
    */
   private final int beamWidth;
 
+  private final boolean extendCandidates;
+
   /** The format for storing, reading, and merging vectors on disk. */
   private static final FlatVectorsFormat flatVectorsFormat =
       new Lucene99FlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
@@ -141,7 +143,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
 
   /** Constructs a format using default graph construction parameters */
   public Lucene99HnswVectorsFormat() {
-    this(DEFAULT_MAX_CONN, 0, DEFAULT_BEAM_WIDTH, DEFAULT_NUM_MERGE_WORKER, null);
+    this(DEFAULT_MAX_CONN, 0, DEFAULT_BEAM_WIDTH, DEFAULT_NUM_MERGE_WORKER, null, false);
   }
 
   /**
@@ -151,7 +153,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
    * @param beamWidth the size of the queue maintained during graph construction.
    */
   public Lucene99HnswVectorsFormat(int maxConn, int beamWidth) {
-    this(maxConn, 0, beamWidth, DEFAULT_NUM_MERGE_WORKER, null);
+    this(maxConn, 0, beamWidth, DEFAULT_NUM_MERGE_WORKER, null, false);
   }
 
   /**
@@ -166,7 +168,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
    *     MergeScheduler#getIntraMergeExecutor(MergePolicy.OneMerge)} is used.
    */
   public Lucene99HnswVectorsFormat(
-      int maxConn, int minConn, int beamWidth, int numMergeWorkers, ExecutorService mergeExec) {
+      int maxConn, int minConn, int beamWidth, int numMergeWorkers, ExecutorService mergeExec, boolean extendCandidates) {
     super("Lucene99HnswVectorsFormat");
     if (maxConn <= 0 || maxConn > MAXIMUM_MAX_CONN) {
       throw new IllegalArgumentException(
@@ -195,6 +197,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
     } else {
       this.mergeExec = null;
     }
+    this.extendCandidates = extendCandidates;
   }
 
   @Override
@@ -206,7 +209,8 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
         beamWidth,
         flatVectorsFormat.fieldsWriter(state),
         numMergeWorkers,
-        mergeExec);
+        mergeExec,
+        extendCandidates);
   }
 
   @Override

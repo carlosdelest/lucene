@@ -80,6 +80,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
 
   private final List<FieldWriter<?>> fields = new ArrayList<>();
   private boolean finished;
+  private final boolean extendCandidates;
 
   public Lucene99HnswVectorsWriter(
       SegmentWriteState state,
@@ -88,7 +89,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
       int beamWidth,
       FlatVectorsWriter flatVectorWriter,
       int numMergeWorkers,
-      TaskExecutor mergeExec)
+      TaskExecutor mergeExec,
+      boolean extendCandidates)
       throws IOException {
     this.M = M;
     this.minConn = minConn;
@@ -96,6 +98,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
     this.beamWidth = beamWidth;
     this.numMergeWorkers = numMergeWorkers;
     this.mergeExec = mergeExec;
+    this.extendCandidates = extendCandidates;
     segmentWriteState = state;
     String metaFileName =
         IndexFileNames.segmentFileName(
@@ -142,7 +145,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
             M,
             minConn,
             beamWidth,
-            segmentWriteState.infoStream);
+            segmentWriteState.infoStream,
+                extendCandidates);
     fields.add(newField);
     return newField;
   }
@@ -533,7 +537,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
       int numParallelMergeWorkers) {
     if (mergeExec != null) {
       return new ConcurrentHnswMerger(
-          fieldInfo, scorerSupplier, M, minConn, beamWidth, mergeExec, numMergeWorkers);
+          fieldInfo, scorerSupplier, M, minConn, beamWidth, mergeExec, numMergeWorkers, extendCandidates);
     }
     if (parallelMergeTaskExecutor != null) {
       return new ConcurrentHnswMerger(
@@ -543,9 +547,10 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
           minConn,
           beamWidth,
           parallelMergeTaskExecutor,
-          numParallelMergeWorkers);
+          numParallelMergeWorkers,
+              extendCandidates);
     }
-    return new IncrementalHnswGraphMerger(fieldInfo, scorerSupplier, M, minConn, beamWidth);
+    return new IncrementalHnswGraphMerger(fieldInfo, scorerSupplier, M, minConn, beamWidth, extendCandidates);
   }
 
   @Override
@@ -582,7 +587,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
         int M,
         int minConn,
         int beamWidth,
-        InfoStream infoStream)
+        InfoStream infoStream,
+        boolean extendCandidates)
         throws IOException {
       return switch (fieldInfo.getVectorEncoding()) {
         case BYTE ->
@@ -593,7 +599,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
                 M,
                 minConn,
                 beamWidth,
-                infoStream);
+                infoStream, extendCandidates);
         case FLOAT32 ->
             new FieldWriter<>(
                 scorer,
@@ -602,7 +608,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
                 M,
                 minConn,
                 beamWidth,
-                infoStream);
+                infoStream, extendCandidates);
       };
     }
 
@@ -614,7 +620,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
         int M,
         int minConn,
         int beamWidth,
-        InfoStream infoStream)
+        InfoStream infoStream,
+        boolean extendCandidates)
         throws IOException {
       this.fieldInfo = fieldInfo;
       RandomVectorScorerSupplier scorerSupplier =
@@ -634,7 +641,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
           };
       this.scorer = scorerSupplier.scorer();
       hnswGraphBuilder =
-          HnswGraphBuilder.create(scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed);
+          HnswGraphBuilder.create(scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, extendCandidates);
       hnswGraphBuilder.setInfoStream(infoStream);
       this.flatFieldVectorsWriter = Objects.requireNonNull(flatFieldVectorsWriter);
     }
