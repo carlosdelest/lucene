@@ -21,7 +21,10 @@ import static org.apache.lucene.codecs.KnnVectorsWriter.MergedVectorValues.hasVe
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat.DIRECT_MONOTONIC_BLOCK_SHIFT;
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.SIMILARITY_FUNCTIONS;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -42,6 +45,7 @@ import org.apache.lucene.index.MergeState;
 import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.index.Sorter;
 import org.apache.lucene.index.VectorSimilarityFunction;
+import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.TaskExecutor;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.util.IOUtils;
@@ -81,6 +85,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
   private final List<FieldWriter<?>> fields = new ArrayList<>();
   private boolean finished;
   private final boolean extendCandidates;
+  private final String graphFileName;
 
   public Lucene99HnswVectorsWriter(
       SegmentWriteState state,
@@ -109,6 +114,11 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
             state.segmentInfo.name,
             state.segmentSuffix,
             Lucene99HnswVectorsFormat.VECTOR_INDEX_EXTENSION);
+
+    graphFileName = IndexFileNames.segmentFileName(
+            state.segmentInfo.name,
+            state.segmentSuffix,
+            "graph");
 
     boolean success = false;
     try {
@@ -196,6 +206,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
     long vectorIndexOffset = vectorIndex.getFilePointer();
     OnHeapHnswGraph graph = fieldData.getGraph();
     int[][] graphLevelNodeOffsets = writeGraph(graph);
+//    writeGraphGefx(graph);
     long vectorIndexLength = vectorIndex.getFilePointer() - vectorIndexOffset;
 
     writeMeta(
@@ -467,6 +478,47 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
       }
     }
     return offsets;
+  }
+
+  public static void writeGraphGefx(OnHeapHnswGraph graph, int level, BufferedWriter writer) throws IOException{
+    writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    writer.write("<gexf xmlns=\"http://www.gexf.net/1.2draft\" version=\"1.2\">\n");
+    writer.write("  <graph mode=\"static\" defaultedgetype=\"undirected\">\n");
+    writer.write("    <nodes>\n");
+
+    // Write nodes
+    for (int i = 0; i < graph.size(); i++) {
+      writer.write("      <node id=\"" + i + "\" />\n");
+    }
+
+    writer.write("    </nodes>\n");
+    writer.write("    <edges>\n");
+
+    // Write edges
+    int edgeId = 0;
+    for (int i = 0; i < graph.size(); i++) {
+      NodesIterator nodes = graph.getNodesOnLevel(level);
+      while (nodes.hasNext()) {
+        int node = nodes.next();
+        NeighborArray neighbors = graph.getNeighbors(level, node);
+        for (int j = 0; j < neighbors.size(); j++) {
+          int neighbor = neighbors.nodes()[j];
+          float weight = neighbors.scores()[j];
+          writer.write("      <edge id=\"" + edgeId++ + "\" source=\"" + node + "\" target=\"" + neighbor + "\"" + " weight=\"" + weight + "\" />\n");
+        }
+      }
+    }
+    writer.write("    </edges>\n");
+    writer.write("  </graph>\n");
+    writer.write("</gexf>\n");
+  }
+
+  private void writeGraphGefx(OnHeapHnswGraph graph) throws IOException {
+    for (int level = 0; level < graph.numLevels(); level++) {
+      try (BufferedWriter writer = Files.newBufferedWriter(Paths.get(graphFileName + "_level" + level + ".gexf"))) {
+        writeGraphGefx(graph, level, writer);
+      }
+    }
   }
 
   private void writeMeta(

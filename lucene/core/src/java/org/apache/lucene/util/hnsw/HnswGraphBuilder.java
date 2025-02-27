@@ -333,6 +333,9 @@ public class HnswGraphBuilder implements HnswBuilder {
     NeighborArray neighbors = hnsw.getNeighbors(level, node);
     assert neighbors.size() == 0; // new node
     int maxConnOnLevel = level == 0 ? M * 2 : M;
+    if (extendCandidates) {
+      candidates = extendCandidates(level, candidates, scorer);
+    }
     boolean[] mask = selectAndLinkDiverse(neighbors, candidates, maxConnOnLevel, scorer, level);
 
     // Link the selected nodes to the new node, and the new node to the selected nodes (again
@@ -371,9 +374,7 @@ public class HnswGraphBuilder implements HnswBuilder {
           UpdateableRandomVectorScorer scorer, 
           int level)
       throws IOException {
-    if (extendCandidates) {
-      candidates = extendCandidates(level, candidates, scorer);
-    }
+
     boolean[] mask = new boolean[candidates.size()];
     // Select the best maxConnOnLevel neighbors of the new node, applying the diversity heuristic
     for (int i = candidates.size() - 1; neighbors.size() < maxConnOnLevel && i >= 0; i--) {
@@ -415,14 +416,14 @@ public class HnswGraphBuilder implements HnswBuilder {
     for(int i = candidates.size() - 1; i >= 0; i--) {
       int node = candidates.nodes()[i];
       candidateSet.add(node);
+
       NeighborArray secondNeighbors = getGraph().getNeighbors(level, node);
       for (int j = 0; j < secondNeighbors.size(); j++) {
         int nbr = secondNeighbors.nodes()[j];
-        if (candidateSet.contains(nbr) == false) {
-          candidateSet.add(nbr);
-        }
+        candidateSet.add(nbr);
       }
     }
+
     NeighborArray expandedCandidates = new NeighborArray(candidateSet.size(), false);
     for (int node : candidateSet) {
       expandedCandidates.addOutOfOrder(node, scorer.score(node));
