@@ -377,6 +377,10 @@ public class HnswGraphBuilder implements HnswBuilder {
 
     boolean[] mask = new boolean[candidates.size()];
     // Select the best maxConnOnLevel neighbors of the new node, applying the diversity heuristic
+
+    List<Integer> highPriorityResults = new ArrayList<>();
+    List<Integer> additionalResults = new ArrayList<>();
+    List<Integer> discardedResults = new ArrayList<>();
     for (int i = candidates.size() - 1; neighbors.size() < maxConnOnLevel && i >= 0; i--) {
       // compare each neighbor (in distance order) against the closer neighbors selected so far,
       // only adding it if it is closer to the target than to any of the other selected neighbors
@@ -384,34 +388,55 @@ public class HnswGraphBuilder implements HnswBuilder {
       float cScore = candidates.scores()[i];
       assert cNode <= hnsw.maxNodeId();
       scorer.setScoringOrdinal(cNode);
-      if (diversityCheck(cScore, neighbors, scorer)) {
-        mask[i] = true;
-        // here we don't need to lock, because there's no incoming link so no others is able to
-        // discover this node such that no others will modify this neighbor array as well
-        neighbors.addInOrder(cNode, cScore);
+
+      boolean closeToDiscarded = closerToAnyCandidate(cScore, scorer, discardedResults);
+      boolean discarded = closerToAnyCandidate(cScore, scorer, highPriorityResults);
+      if (discarded == false) {
+        discarded = closerToAnyCandidate(cScore, scorer, additionalResults);
+      }
+
+      if (discarded == false) {
+        highPriorityResults.add(i);
+      } else if (closeToDiscarded) {
+        additionalResults.add(i);
+      } else {
+        discardedResults.add(i);
       }
     }
-    // Add pruned connections if needed
-    boolean unsorted = false;
-    for (int i = candidates.size() - 1; neighbors.size() < minConn && neighbors.size() < maxConnOnLevel && i >= 0; i--) {
-      if (mask[i] == false) {
-        mask[i] = true;
-        int cNode = candidates.nodes()[i];
-        float cScore = candidates.scores()[i];
-        neighbors.addOutOfOrder(cNode, cScore);
-        unsorted = true;
-      }
-    }
-    if (unsorted) {
-        neighbors.sort(scorer);
-    }
+
+    addCandidatesToMask(neighbors, candidates, maxConnOnLevel, highPriorityResults, mask);
+    addCandidatesToMask(neighbors, candidates, maxConnOnLevel, additionalResults, mask);
+    addCandidatesToMask(neighbors, candidates, minConn, discardedResults, mask);
+    neighbors.sort(scorer);
+
     return mask;
+  }
+
+  private static void addCandidatesToMask(NeighborArray neighbors, NeighborArray candidates, int maxConnOnLevel, List<Integer> additionalResults, boolean[] mask) {
+    for (Integer additionalResult : additionalResults) {
+      if (neighbors.size() >= maxConnOnLevel) {
+        break;
+      }
+      mask[additionalResult] = true;
+      neighbors.addOutOfOrder(candidates.nodes()[additionalResult], candidates.scores()[additionalResult]);
+    }
+  }
+
+  private boolean closerToAnyCandidate(float scoreToNewNode, UpdateableRandomVectorScorer scorer, List<Integer> candidates) throws IOException {
+      for (int candidate : candidates) {
+          float scoreToCandidate = scorer.score(candidate);
+          if (scoreToCandidate < scoreToNewNode) {
+              return true;
+          }
+      }
+    return false;
   }
 
   private NeighborArray extendCandidates(
           int level, NeighborArray candidates, UpdateableRandomVectorScorer scorer)
           throws IOException {
 
+    // Adds all candidates neighbours to the candidate set
     Set<Integer> candidateSet = new HashSet<>();
     for(int i = candidates.size() - 1; i >= 0; i--) {
       int node = candidates.nodes()[i];
