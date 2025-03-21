@@ -46,6 +46,7 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
   protected final int minConn;
   protected final int beamWidth;
   protected final boolean extendCandidates;
+  protected final boolean multiQueue;
 
   protected KnnVectorsReader initReader;
   protected MergeState.DocMap initDocMap;
@@ -55,13 +56,20 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
    * @param fieldInfo FieldInfo for the field being merged
    */
   public IncrementalHnswGraphMerger(
-      FieldInfo fieldInfo, RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, boolean extendCandidates) {
+      FieldInfo fieldInfo,
+      RandomVectorScorerSupplier scorerSupplier,
+      int M,
+      int minConn,
+      int beamWidth,
+      boolean extendCandidates,
+      boolean multiQueue) {
     this.fieldInfo = fieldInfo;
     this.scorerSupplier = scorerSupplier;
     this.M = M;
     this.minConn = minConn;
     this.beamWidth = beamWidth;
     this.extendCandidates = extendCandidates;
+    this.multiQueue = multiQueue;
   }
 
   /**
@@ -117,13 +125,27 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
       throws IOException {
     if (initReader == null) {
       return HnswGraphBuilder.create(
-          scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, maxOrd, extendCandidates);
+          scorerSupplier,
+          M,
+          minConn,
+          beamWidth,
+          HnswGraphBuilder.randSeed,
+          maxOrd,
+          extendCandidates,
+          multiQueue);
     }
 
     HnswGraph initializerGraph = ((HnswGraphProvider) initReader).getGraph(fieldInfo.name);
     if (initializerGraph.size() == 0) {
       return HnswGraphBuilder.create(
-          scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, maxOrd, extendCandidates);
+          scorerSupplier,
+          M,
+          minConn,
+          beamWidth,
+          HnswGraphBuilder.randSeed,
+          maxOrd,
+          extendCandidates,
+          multiQueue);
     }
 
     BitSet initializedNodes = new FixedBitSet(maxOrd);
@@ -137,7 +159,8 @@ public class IncrementalHnswGraphMerger implements HnswGraphMerger {
         oldToNewOrdinalMap,
         initializedNodes,
         maxOrd,
-        extendCandidates);
+        extendCandidates,
+        multiQueue);
   }
 
   @Override

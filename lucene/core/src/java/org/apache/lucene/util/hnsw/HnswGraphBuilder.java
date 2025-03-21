@@ -18,11 +18,17 @@
 package org.apache.lucene.util.hnsw;
 
 import static java.lang.Math.log;
-import static java.lang.Math.min;
 import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
+import java.util.SplittableRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import org.apache.lucene.search.KnnCollector;
@@ -73,17 +79,32 @@ public class HnswGraphBuilder implements HnswBuilder {
   private InfoStream infoStream = InfoStream.getDefault();
   private boolean frozen;
   private final boolean extendCandidates;
+  private final boolean multiQueue;
 
   public static HnswGraphBuilder create(
-      RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, boolean extendCandidates)
+      RandomVectorScorerSupplier scorerSupplier,
+      int M,
+      int minConn,
+      int beamWidth,
+      long seed,
+      boolean extendCandidates,
+      boolean multiQueue)
       throws IOException {
-    return create(scorerSupplier, M, minConn, beamWidth, seed, -1, extendCandidates);
+    return create(scorerSupplier, M, minConn, beamWidth, seed, -1, extendCandidates, multiQueue);
   }
 
   public static HnswGraphBuilder create(
-          RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, int graphSize, boolean extendCandidates)
-          throws IOException {
-    return new HnswGraphBuilder(scorerSupplier, M, minConn, beamWidth, seed, graphSize, extendCandidates);
+      RandomVectorScorerSupplier scorerSupplier,
+      int M,
+      int minConn,
+      int beamWidth,
+      long seed,
+      int graphSize,
+      boolean extendCandidates,
+      boolean multiQueue)
+      throws IOException {
+    return new HnswGraphBuilder(
+        scorerSupplier, M, minConn, beamWidth, seed, graphSize, extendCandidates, multiQueue);
   }
 
   /**
@@ -99,13 +120,33 @@ public class HnswGraphBuilder implements HnswBuilder {
    * @param graphSize size of graph, if unknown, pass in -1
    */
   protected HnswGraphBuilder(
-      RandomVectorScorerSupplier scorerSupplier, int M, int minConn, int beamWidth, long seed, int graphSize, boolean extendCandidates)
+      RandomVectorScorerSupplier scorerSupplier,
+      int M,
+      int minConn,
+      int beamWidth,
+      long seed,
+      int graphSize,
+      boolean extendCandidates,
+      boolean multiQueue)
       throws IOException {
-    this(scorerSupplier, beamWidth, seed, new OnHeapHnswGraph(M, graphSize), minConn, extendCandidates);
+    this(
+        scorerSupplier,
+        beamWidth,
+        seed,
+        new OnHeapHnswGraph(M, graphSize),
+        minConn,
+        extendCandidates,
+        multiQueue);
   }
 
   protected HnswGraphBuilder(
-      RandomVectorScorerSupplier scorerSupplier, int beamWidth, long seed, OnHeapHnswGraph hnsw, int minConn, boolean extendCandidates)
+      RandomVectorScorerSupplier scorerSupplier,
+      int beamWidth,
+      long seed,
+      OnHeapHnswGraph hnsw,
+      int minConn,
+      boolean extendCandidates,
+      boolean multiQueue)
       throws IOException {
     this(
         scorerSupplier,
@@ -114,29 +155,32 @@ public class HnswGraphBuilder implements HnswBuilder {
         hnsw,
         null,
         new HnswGraphSearcher(new NeighborQueue(beamWidth, true), new FixedBitSet(hnsw.size())),
-            minConn, extendCandidates);
+        minConn,
+        extendCandidates,
+        multiQueue);
   }
 
   /**
    * Reads all the vectors from vector values, builds a graph connecting them by their dense
    * ordinals, using the given hyperparameter settings, and returns the resulting graph.
    *
-   * @param scorerSupplier       a supplier to create vector scorer from ordinals.
-   * @param beamWidth            the size of the beam search to use when finding nearest neighbors.
-   * @param seed                 the seed for a random number generator used during graph construction. Provide this
-   *                             to ensure repeatable construction.
-   * @param hnsw                 the graph to build, can be previously initialized
+   * @param scorerSupplier a supplier to create vector scorer from ordinals.
+   * @param beamWidth the size of the beam search to use when finding nearest neighbors.
+   * @param seed the seed for a random number generator used during graph construction. Provide this
+   *     to ensure repeatable construction.
+   * @param hnsw the graph to build, can be previously initialized
    * @param minConn
    */
   protected HnswGraphBuilder(
-          RandomVectorScorerSupplier scorerSupplier,
-          int beamWidth,
-          long seed,
-          OnHeapHnswGraph hnsw,
-          HnswLock hnswLock,
-          HnswGraphSearcher graphSearcher,
-          int minConn,
-          boolean extendCandidates)
+      RandomVectorScorerSupplier scorerSupplier,
+      int beamWidth,
+      long seed,
+      OnHeapHnswGraph hnsw,
+      HnswLock hnswLock,
+      HnswGraphSearcher graphSearcher,
+      int minConn,
+      boolean extendCandidates,
+      boolean multiQueue)
       throws IOException {
     if (hnsw.maxConn() <= 0) {
       throw new IllegalArgumentException("M (max connections) must be positive");
@@ -157,6 +201,7 @@ public class HnswGraphBuilder implements HnswBuilder {
     beamCandidates = new GraphBuilderKnnCollector(beamWidth);
     this.minConn = minConn;
     this.extendCandidates = extendCandidates;
+    this.multiQueue = multiQueue;
   }
 
   @Override
@@ -336,7 +381,10 @@ public class HnswGraphBuilder implements HnswBuilder {
     if (extendCandidates) {
       candidates = extendCandidates(level, candidates, scorer);
     }
-    boolean[] mask = selectAndLinkDiverse(neighbors, candidates, maxConnOnLevel, scorer, level);
+    boolean[] mask =
+        multiQueue
+            ? selectAndLinkDiverseMultiQueue(neighbors, candidates, maxConnOnLevel, scorer, level)
+            : selectAndLinkDiverse(neighbors, candidates, maxConnOnLevel, scorer, level);
 
     // Link the selected nodes to the new node, and the new node to the selected nodes (again
     // applying diversity heuristic)
@@ -363,16 +411,60 @@ public class HnswGraphBuilder implements HnswBuilder {
     }
   }
 
+  private boolean[] selectAndLinkDiverse(
+      NeighborArray neighbors,
+      NeighborArray candidates,
+      int maxConnOnLevel,
+      UpdateableRandomVectorScorer scorer,
+      int level)
+      throws IOException {
+
+    boolean[] mask = new boolean[candidates.size()];
+    // Select the best maxConnOnLevel neighbors of the new node, applying the diversity heuristic
+    for (int i = candidates.size() - 1; neighbors.size() < maxConnOnLevel && i >= 0; i--) {
+      // compare each neighbor (in distance order) against the closer neighbors selected so far,
+      // only adding it if it is closer to the target than to any of the other selected neighbors
+      int cNode = candidates.nodes()[i];
+      float cScore = candidates.scores()[i];
+      assert cNode <= hnsw.maxNodeId();
+      scorer.setScoringOrdinal(cNode);
+
+      if (diversityCheck(cScore, neighbors, scorer)) {
+        mask[i] = true;
+        // here we don't need to lock, because there's no incoming link so no others is able to
+        // discover this node such that no others will modify this neighbor array as well
+        neighbors.addInOrder(cNode, cScore);
+      }
+    }
+    // Add pruned connections if needed
+    boolean unsorted = false;
+    for (int i = candidates.size() - 1;
+        neighbors.size() < minConn && neighbors.size() < maxConnOnLevel && i >= 0;
+        i--) {
+      if (mask[i] == false) {
+        mask[i] = true;
+        int cNode = candidates.nodes()[i];
+        float cScore = candidates.scores()[i];
+        neighbors.addOutOfOrder(cNode, cScore);
+        unsorted = true;
+      }
+    }
+    if (unsorted) {
+      neighbors.sort(scorer);
+    }
+    return mask;
+  }
+
   /**
    * This method will select neighbors to add and return a mask telling the caller which candidates
    * are selected
    */
-  private boolean[] selectAndLinkDiverse(
-          NeighborArray neighbors,
-          NeighborArray candidates,
-          int maxConnOnLevel,
-          UpdateableRandomVectorScorer scorer, 
-          int level)
+  private boolean[] selectAndLinkDiverseMultiQueue(
+      NeighborArray neighbors,
+      NeighborArray candidates,
+      int maxConnOnLevel,
+      UpdateableRandomVectorScorer scorer,
+      int level)
       throws IOException {
 
     boolean[] mask = new boolean[candidates.size()];
@@ -412,33 +504,40 @@ public class HnswGraphBuilder implements HnswBuilder {
     return mask;
   }
 
-  private static void addCandidatesToMask(NeighborArray neighbors, NeighborArray candidates, int maxConnOnLevel, List<Integer> additionalResults, boolean[] mask) {
+  private static void addCandidatesToMask(
+      NeighborArray neighbors,
+      NeighborArray candidates,
+      int maxConnOnLevel,
+      List<Integer> additionalResults,
+      boolean[] mask) {
     for (Integer additionalResult : additionalResults) {
       if (neighbors.size() >= maxConnOnLevel) {
         break;
       }
       mask[additionalResult] = true;
-      neighbors.addOutOfOrder(candidates.nodes()[additionalResult], candidates.scores()[additionalResult]);
+      neighbors.addOutOfOrder(
+          candidates.nodes()[additionalResult], candidates.scores()[additionalResult]);
     }
   }
 
-  private boolean closerToAnyCandidate(float scoreToNewNode, UpdateableRandomVectorScorer scorer, List<Integer> candidates) throws IOException {
-      for (int candidate : candidates) {
-          float scoreToCandidate = scorer.score(candidate);
-          if (scoreToCandidate < scoreToNewNode) {
-              return true;
-          }
+  private boolean closerToAnyCandidate(
+      float scoreToNewNode, UpdateableRandomVectorScorer scorer, List<Integer> candidates)
+      throws IOException {
+    for (int candidate : candidates) {
+      float scoreToCandidate = scorer.score(candidate);
+      if (scoreToCandidate < scoreToNewNode) {
+        return true;
       }
+    }
     return false;
   }
 
   private NeighborArray extendCandidates(
-          int level, NeighborArray candidates, UpdateableRandomVectorScorer scorer)
-          throws IOException {
+      int level, NeighborArray candidates, UpdateableRandomVectorScorer scorer) throws IOException {
 
     // Adds all candidates neighbours to the candidate set
     Set<Integer> candidateSet = new HashSet<>();
-    for(int i = candidates.size() - 1; i >= 0; i--) {
+    for (int i = candidates.size() - 1; i >= 0; i--) {
       int node = candidates.nodes()[i];
       candidateSet.add(node);
 

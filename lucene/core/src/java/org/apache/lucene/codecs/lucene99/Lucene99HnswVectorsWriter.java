@@ -45,7 +45,6 @@ import org.apache.lucene.index.MergeState;
 import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.index.Sorter;
 import org.apache.lucene.index.VectorSimilarityFunction;
-import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.TaskExecutor;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.util.IOUtils;
@@ -83,6 +82,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
   private final TaskExecutor mergeExec;
 
   private final List<FieldWriter<?>> fields = new ArrayList<>();
+  private final boolean multiQueue;
   private boolean finished;
   private final boolean extendCandidates;
   private final String graphFileName;
@@ -95,7 +95,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
       FlatVectorsWriter flatVectorWriter,
       int numMergeWorkers,
       TaskExecutor mergeExec,
-      boolean extendCandidates)
+      boolean extendCandidates,
+      boolean multiQueue)
       throws IOException {
     this.M = M;
     this.minConn = minConn;
@@ -104,6 +105,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
     this.numMergeWorkers = numMergeWorkers;
     this.mergeExec = mergeExec;
     this.extendCandidates = extendCandidates;
+    this.multiQueue = multiQueue;
     segmentWriteState = state;
     String metaFileName =
         IndexFileNames.segmentFileName(
@@ -115,10 +117,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
             state.segmentSuffix,
             Lucene99HnswVectorsFormat.VECTOR_INDEX_EXTENSION);
 
-    graphFileName = IndexFileNames.segmentFileName(
-            state.segmentInfo.name,
-            state.segmentSuffix,
-            "graph");
+    graphFileName =
+        IndexFileNames.segmentFileName(state.segmentInfo.name, state.segmentSuffix, "graph");
 
     boolean success = false;
     try {
@@ -156,7 +156,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
             minConn,
             beamWidth,
             segmentWriteState.infoStream,
-                extendCandidates);
+            extendCandidates,
+            multiQueue);
     fields.add(newField);
     return newField;
   }
@@ -206,7 +207,7 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
     long vectorIndexOffset = vectorIndex.getFilePointer();
     OnHeapHnswGraph graph = fieldData.getGraph();
     int[][] graphLevelNodeOffsets = writeGraph(graph);
-//    writeGraphGefx(graph);
+    //    writeGraphGefx(graph);
     long vectorIndexLength = vectorIndex.getFilePointer() - vectorIndexOffset;
 
     writeMeta(
@@ -480,7 +481,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
     return offsets;
   }
 
-  public static void writeGraphGefx(OnHeapHnswGraph graph, int level, BufferedWriter writer) throws IOException{
+  public static void writeGraphGefx(OnHeapHnswGraph graph, int level, BufferedWriter writer)
+      throws IOException {
     writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     writer.write("<gexf xmlns=\"http://www.gexf.net/1.2draft\" version=\"1.2\">\n");
     writer.write("  <graph mode=\"static\" defaultedgetype=\"undirected\">\n");
@@ -504,7 +506,17 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
         for (int j = 0; j < neighbors.size(); j++) {
           int neighbor = neighbors.nodes()[j];
           float weight = neighbors.scores()[j];
-          writer.write("      <edge id=\"" + edgeId++ + "\" source=\"" + node + "\" target=\"" + neighbor + "\"" + " weight=\"" + weight + "\" />\n");
+          writer.write(
+              "      <edge id=\""
+                  + edgeId++
+                  + "\" source=\""
+                  + node
+                  + "\" target=\""
+                  + neighbor
+                  + "\""
+                  + " weight=\""
+                  + weight
+                  + "\" />\n");
         }
       }
     }
@@ -515,7 +527,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
 
   private void writeGraphGefx(OnHeapHnswGraph graph) throws IOException {
     for (int level = 0; level < graph.numLevels(); level++) {
-      try (BufferedWriter writer = Files.newBufferedWriter(Paths.get(graphFileName + "_level" + level + ".gexf"))) {
+      try (BufferedWriter writer =
+          Files.newBufferedWriter(Paths.get(graphFileName + "_level" + level + ".gexf"))) {
         writeGraphGefx(graph, level, writer);
       }
     }
@@ -589,7 +602,15 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
       int numParallelMergeWorkers) {
     if (mergeExec != null) {
       return new ConcurrentHnswMerger(
-          fieldInfo, scorerSupplier, M, minConn, beamWidth, mergeExec, numMergeWorkers, extendCandidates);
+          fieldInfo,
+          scorerSupplier,
+          M,
+          minConn,
+          beamWidth,
+          mergeExec,
+          numMergeWorkers,
+          extendCandidates,
+          multiQueue);
     }
     if (parallelMergeTaskExecutor != null) {
       return new ConcurrentHnswMerger(
@@ -600,9 +621,11 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
           beamWidth,
           parallelMergeTaskExecutor,
           numParallelMergeWorkers,
-              extendCandidates);
+          extendCandidates,
+          multiQueue);
     }
-    return new IncrementalHnswGraphMerger(fieldInfo, scorerSupplier, M, minConn, beamWidth, extendCandidates);
+    return new IncrementalHnswGraphMerger(
+        fieldInfo, scorerSupplier, M, minConn, beamWidth, extendCandidates, multiQueue);
   }
 
   @Override
@@ -640,7 +663,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
         int minConn,
         int beamWidth,
         InfoStream infoStream,
-        boolean extendCandidates)
+        boolean extendCandidates,
+        boolean multiQueue)
         throws IOException {
       return switch (fieldInfo.getVectorEncoding()) {
         case BYTE ->
@@ -651,7 +675,9 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
                 M,
                 minConn,
                 beamWidth,
-                infoStream, extendCandidates);
+                infoStream,
+                extendCandidates,
+                multiQueue);
         case FLOAT32 ->
             new FieldWriter<>(
                 scorer,
@@ -660,7 +686,9 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
                 M,
                 minConn,
                 beamWidth,
-                infoStream, extendCandidates);
+                infoStream,
+                extendCandidates,
+                multiQueue);
       };
     }
 
@@ -673,7 +701,8 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
         int minConn,
         int beamWidth,
         InfoStream infoStream,
-        boolean extendCandidates)
+        boolean extendCandidates,
+        boolean multiQueue)
         throws IOException {
       this.fieldInfo = fieldInfo;
       RandomVectorScorerSupplier scorerSupplier =
@@ -693,7 +722,14 @@ public final class Lucene99HnswVectorsWriter extends KnnVectorsWriter {
           };
       this.scorer = scorerSupplier.scorer();
       hnswGraphBuilder =
-          HnswGraphBuilder.create(scorerSupplier, M, minConn, beamWidth, HnswGraphBuilder.randSeed, extendCandidates);
+          HnswGraphBuilder.create(
+              scorerSupplier,
+              M,
+              minConn,
+              beamWidth,
+              HnswGraphBuilder.randSeed,
+              extendCandidates,
+              multiQueue);
       hnswGraphBuilder.setInfoStream(infoStream);
       this.flatFieldVectorsWriter = Objects.requireNonNull(flatFieldVectorsWriter);
     }

@@ -53,7 +53,8 @@ public class HnswConcurrentMergeBuilder implements HnswBuilder {
       int beamWidth,
       OnHeapHnswGraph hnsw,
       BitSet initializedNodes,
-      boolean extendCandidates)
+      boolean extendCandidates,
+      boolean multiQueue)
       throws IOException {
     this.taskExecutor = taskExecutor;
     AtomicInteger workProgress = new AtomicInteger(0);
@@ -70,7 +71,8 @@ public class HnswConcurrentMergeBuilder implements HnswBuilder {
               hnswLock,
               initializedNodes,
               workProgress,
-              extendCandidates);
+              extendCandidates,
+              multiQueue);
     }
   }
 
@@ -157,7 +159,8 @@ public class HnswConcurrentMergeBuilder implements HnswBuilder {
         HnswLock hnswLock,
         BitSet initializedNodes,
         AtomicInteger workProgress,
-        boolean extendCandidates)
+        boolean extendCandidates,
+        boolean multiQueue)
         throws IOException {
       super(
           scorerSupplier,
@@ -166,7 +169,10 @@ public class HnswConcurrentMergeBuilder implements HnswBuilder {
           hnsw,
           hnswLock,
           new MergeSearcher(
-              new NeighborQueue(beamWidth, true), hnswLock, new FixedBitSet(hnsw.maxNodeId() + 1)), minConn, extendCandidates);
+              new NeighborQueue(beamWidth, true), hnswLock, new FixedBitSet(hnsw.maxNodeId() + 1)),
+          minConn,
+          extendCandidates,
+          multiQueue);
       this.workProgress = workProgress;
       this.initializedNodes = initializedNodes;
       this.scorer = scorerSupplier.scorer();

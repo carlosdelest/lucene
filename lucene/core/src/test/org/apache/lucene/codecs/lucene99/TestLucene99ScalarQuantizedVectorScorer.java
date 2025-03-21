@@ -59,7 +59,9 @@ public class TestLucene99ScalarQuantizedVectorScorer extends LuceneTestCase {
             bits,
             compress,
             0f,
-            null, false));
+            null,
+            false,
+            false));
   }
 
   public void testNonZeroScores() throws IOException {

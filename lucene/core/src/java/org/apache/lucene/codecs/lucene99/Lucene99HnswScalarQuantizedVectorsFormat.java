@@ -51,6 +51,7 @@ public class Lucene99HnswScalarQuantizedVectorsFormat extends KnnVectorsFormat {
    * {@link Lucene99HnswVectorsFormat#DEFAULT_MAX_CONN}. See {@link HnswGraph} for more details.
    */
   private final int maxConn;
+
   private final int minConn;
 
   /**
@@ -66,10 +67,21 @@ public class Lucene99HnswScalarQuantizedVectorsFormat extends KnnVectorsFormat {
   private final int numMergeWorkers;
   private final TaskExecutor mergeExec;
   private final boolean extendCandidates;
+  private final boolean multiQueue;
 
   /** Constructs a format using default graph construction parameters with 7 bit quantization */
   public Lucene99HnswScalarQuantizedVectorsFormat() {
-    this(DEFAULT_MAX_CONN, 0, DEFAULT_BEAM_WIDTH, DEFAULT_NUM_MERGE_WORKER, 7, false, null, null, false);
+    this(
+        DEFAULT_MAX_CONN,
+        0,
+        DEFAULT_BEAM_WIDTH,
+        DEFAULT_NUM_MERGE_WORKER,
+        7,
+        false,
+        null,
+        null,
+        false,
+        false);
   }
 
   /**
@@ -79,23 +91,34 @@ public class Lucene99HnswScalarQuantizedVectorsFormat extends KnnVectorsFormat {
    * @param beamWidth the size of the queue maintained during graph construction.
    */
   public Lucene99HnswScalarQuantizedVectorsFormat(int maxConn, int beamWidth) {
-    this(maxConn, 0, beamWidth, DEFAULT_NUM_MERGE_WORKER, 7, false, null, null, false);
+    this(maxConn, 0, beamWidth, DEFAULT_NUM_MERGE_WORKER, 7, false, null, null, false, false);
   }
 
   public Lucene99HnswScalarQuantizedVectorsFormat(int maxConn, int minConn, int beamWidth) {
-    this(maxConn, minConn, beamWidth, DEFAULT_NUM_MERGE_WORKER, 7, false, null, null, false);
+    this(maxConn, minConn, beamWidth, DEFAULT_NUM_MERGE_WORKER, 7, false, null, null, false, false);
   }
 
   public Lucene99HnswScalarQuantizedVectorsFormat(
-          int maxConn,
-          int beamWidth,
-          int numMergeWorkers,
-          int bits,
-          boolean compress,
-          Float confidenceInterval,
-          ExecutorService mergeExec,
-          boolean extendCandidates) {
-    this(maxConn, 0, beamWidth, numMergeWorkers, bits, compress, confidenceInterval, mergeExec, extendCandidates);
+      int maxConn,
+      int beamWidth,
+      int numMergeWorkers,
+      int bits,
+      boolean compress,
+      Float confidenceInterval,
+      ExecutorService mergeExec,
+      boolean extendCandidates,
+      boolean multiQueue) {
+    this(
+        maxConn,
+        0,
+        beamWidth,
+        numMergeWorkers,
+        bits,
+        compress,
+        confidenceInterval,
+        mergeExec,
+        extendCandidates,
+        multiQueue);
   }
 
   /**
@@ -126,7 +149,8 @@ public class Lucene99HnswScalarQuantizedVectorsFormat extends KnnVectorsFormat {
       boolean compress,
       Float confidenceInterval,
       ExecutorService mergeExec,
-      boolean extendCandidates) {
+      boolean extendCandidates,
+      boolean multiQueue) {
     super(NAME);
     if (maxConn <= 0 || maxConn > MAXIMUM_MAX_CONN) {
       throw new IllegalArgumentException(
@@ -158,6 +182,7 @@ public class Lucene99HnswScalarQuantizedVectorsFormat extends KnnVectorsFormat {
         new Lucene99ScalarQuantizedVectorsFormat(confidenceInterval, bits, compress);
     this.minConn = minConn;
     this.extendCandidates = extendCandidates;
+    this.multiQueue = multiQueue;
   }
 
   @Override
@@ -170,7 +195,8 @@ public class Lucene99HnswScalarQuantizedVectorsFormat extends KnnVectorsFormat {
         flatVectorsFormat.fieldsWriter(state),
         numMergeWorkers,
         mergeExec,
-        extendCandidates);
+        extendCandidates,
+        multiQueue);
   }
 
   @Override

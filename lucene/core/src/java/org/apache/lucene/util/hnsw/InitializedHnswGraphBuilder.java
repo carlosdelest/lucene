@@ -53,7 +53,8 @@ public final class InitializedHnswGraphBuilder extends HnswGraphBuilder {
       int[] newOrdMap,
       BitSet initializedNodes,
       int totalNumberOfVectors,
-      boolean extendCandidates)
+      boolean extendCandidates,
+      boolean multiQueue)
       throws IOException {
     return new InitializedHnswGraphBuilder(
         scorerSupplier,
@@ -61,7 +62,9 @@ public final class InitializedHnswGraphBuilder extends HnswGraphBuilder {
         beamWidth,
         seed,
         initGraph(initializerGraph, newOrdMap, totalNumberOfVectors),
-        initializedNodes, extendCandidates);
+        initializedNodes,
+        extendCandidates,
+        multiQueue);
   }
 
   public static OnHeapHnswGraph initGraph(
@@ -97,9 +100,10 @@ public final class InitializedHnswGraphBuilder extends HnswGraphBuilder {
       long seed,
       OnHeapHnswGraph initializedGraph,
       BitSet initializedNodes,
-      boolean extendCandidates)
+      boolean extendCandidates,
+      boolean multiQueue)
       throws IOException {
-    super(scorerSupplier, beamWidth, seed, initializedGraph, minConn, extendCandidates);
+    super(scorerSupplier, beamWidth, seed, initializedGraph, minConn, extendCandidates, multiQueue);
     this.initializedNodes = initializedNodes;
   }
 

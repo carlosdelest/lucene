@@ -133,6 +133,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
   private final int beamWidth;
 
   private final boolean extendCandidates;
+  private final boolean multiQueue;
 
   /** The format for storing, reading, and merging vectors on disk. */
   private static final FlatVectorsFormat flatVectorsFormat =
@@ -143,7 +144,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
 
   /** Constructs a format using default graph construction parameters */
   public Lucene99HnswVectorsFormat() {
-    this(DEFAULT_MAX_CONN, 0, DEFAULT_BEAM_WIDTH, DEFAULT_NUM_MERGE_WORKER, null, false);
+    this(DEFAULT_MAX_CONN, 0, DEFAULT_BEAM_WIDTH, DEFAULT_NUM_MERGE_WORKER, null, false, false);
   }
 
   /**
@@ -153,7 +154,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
    * @param beamWidth the size of the queue maintained during graph construction.
    */
   public Lucene99HnswVectorsFormat(int maxConn, int beamWidth) {
-    this(maxConn, 0, beamWidth, DEFAULT_NUM_MERGE_WORKER, null, false);
+    this(maxConn, 0, beamWidth, DEFAULT_NUM_MERGE_WORKER, null, false, false);
   }
 
   /**
@@ -168,7 +169,13 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
    *     MergeScheduler#getIntraMergeExecutor(MergePolicy.OneMerge)} is used.
    */
   public Lucene99HnswVectorsFormat(
-      int maxConn, int minConn, int beamWidth, int numMergeWorkers, ExecutorService mergeExec, boolean extendCandidates) {
+      int maxConn,
+      int minConn,
+      int beamWidth,
+      int numMergeWorkers,
+      ExecutorService mergeExec,
+      boolean extendCandidates,
+      boolean multiQueue) {
     super("Lucene99HnswVectorsFormat");
     if (maxConn <= 0 || maxConn > MAXIMUM_MAX_CONN) {
       throw new IllegalArgumentException(
@@ -198,6 +205,7 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
       this.mergeExec = null;
     }
     this.extendCandidates = extendCandidates;
+    this.multiQueue = multiQueue;
   }
 
   @Override
@@ -210,7 +218,8 @@ public final class Lucene99HnswVectorsFormat extends KnnVectorsFormat {
         flatVectorsFormat.fieldsWriter(state),
         numMergeWorkers,
         mergeExec,
-        extendCandidates);
+        extendCandidates,
+        multiQueue);
   }
 
   @Override
