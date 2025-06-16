@@ -18,14 +18,11 @@ package org.apache.lucene.codecs.lucene102;
 
 import static org.apache.lucene.codecs.lucene102.Lucene102BinaryQuantizedVectorsFormat.BINARIZED_VECTOR_COMPONENT;
 import static org.apache.lucene.codecs.lucene102.Lucene102BinaryQuantizedVectorsFormat.DIRECT_MONOTONIC_BLOCK_SHIFT;
-import static org.apache.lucene.codecs.lucene102.Lucene102BinaryQuantizedVectorsFormat.INDEX_BITS;
-import static org.apache.lucene.codecs.lucene102.Lucene102BinaryQuantizedVectorsFormat.QUERY_BITS;
 import static org.apache.lucene.index.VectorSimilarityFunction.COSINE;
 import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
 import static org.apache.lucene.util.RamUsageEstimator.shallowSizeOfInstance;
 import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.discretize;
 import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.packAsBinary;
-import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.transposeHalfByte;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -73,6 +70,8 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
   private final FlatVectorsWriter rawVectorDelegate;
   private final Lucene102BinaryFlatVectorsScorer vectorsScorer;
   private boolean finished;
+  private final byte indexBits;
+  private final byte queryBits;
 
   /**
    * Sole constructor
@@ -82,11 +81,14 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
   protected Lucene102BinaryQuantizedVectorsWriter(
       Lucene102BinaryFlatVectorsScorer vectorsScorer,
       FlatVectorsWriter rawVectorDelegate,
-      SegmentWriteState state)
+      SegmentWriteState state,
+      byte indexBits, byte queryBits)
       throws IOException {
     super(vectorsScorer);
     this.vectorsScorer = vectorsScorer;
     this.segmentWriteState = state;
+    this.indexBits = indexBits;
+    this.queryBits = queryBits;
     String metaFileName =
         IndexFileNames.segmentFileName(
             state.segmentInfo.name,
@@ -192,15 +194,16 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
   private void writeBinarizedVectors(
       FieldWriter fieldData, float[] clusterCenter, OptimizedScalarQuantizer scalarQuantizer)
       throws IOException {
-    int discreteDims = discretize(fieldData.fieldInfo.getVectorDimension(), 64);
-    byte[] quantizationScratch = new byte[discreteDims];
-    byte[] vector = new byte[discreteDims / 8];
+    byte[] quantizationScratch = new byte[fieldData.fieldInfo.getVectorDimension()];
     for (int i = 0; i < fieldData.getVectors().size(); i++) {
       float[] v = fieldData.getVectors().get(i);
       OptimizedScalarQuantizer.QuantizationResult corrections =
-          scalarQuantizer.scalarQuantize(v, quantizationScratch, INDEX_BITS, clusterCenter);
-      packAsBinary(quantizationScratch, vector);
-      binarizedVectorData.writeBytes(vector, vector.length);
+      scalarQuantizer.scalarQuantize(v, quantizationScratch, indexBits, clusterCenter);
+      assert v.length ==quantizationScratch.length : "Vector length mismatch: "
+          + v.length
+          + " != "
+          + quantizationScratch.length;
+      binarizedVectorData.writeBytes(quantizationScratch, quantizationScratch.length);
       binarizedVectorData.writeInt(Float.floatToIntBits(corrections.lowerInterval()));
       binarizedVectorData.writeInt(Float.floatToIntBits(corrections.upperInterval()));
       binarizedVectorData.writeInt(Float.floatToIntBits(corrections.additionalCorrection()));
@@ -245,15 +248,12 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
       int[] ordMap,
       OptimizedScalarQuantizer scalarQuantizer)
       throws IOException {
-    int discreteDims = discretize(fieldData.fieldInfo.getVectorDimension(), 64);
-    byte[] quantizationScratch = new byte[discreteDims];
-    byte[] vector = new byte[discreteDims / 8];
+    byte[] quantizationScratch = new byte[fieldData.fieldInfo.getVectorDimension()];
     for (int ordinal : ordMap) {
       float[] v = fieldData.getVectors().get(ordinal);
       OptimizedScalarQuantizer.QuantizationResult corrections =
-          scalarQuantizer.scalarQuantize(v, quantizationScratch, INDEX_BITS, clusterCenter);
-      packAsBinary(quantizationScratch, vector);
-      binarizedVectorData.writeBytes(vector, vector.length);
+          scalarQuantizer.scalarQuantize(v, quantizationScratch, indexBits, clusterCenter);
+      binarizedVectorData.writeBytes(quantizationScratch, quantizationScratch.length);
       binarizedVectorData.writeInt(Float.floatToIntBits(corrections.lowerInterval()));
       binarizedVectorData.writeInt(Float.floatToIntBits(corrections.upperInterval()));
       binarizedVectorData.writeInt(Float.floatToIntBits(corrections.additionalCorrection()));
@@ -331,7 +331,7 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
           new BinarizedFloatVectorValues(
               floatVectorValues,
               new OptimizedScalarQuantizer(fieldInfo.getVectorSimilarityFunction()),
-              centroid);
+              centroid, indexBits);
       long vectorDataOffset = binarizedVectorData.alignFilePointer(Float.BYTES);
       DocsWithFieldSet docsWithField =
           writeBinarizedVectorData(binarizedVectorData, binarizedVectorValues);
@@ -351,18 +351,16 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
     }
   }
 
-  static DocsWithFieldSet writeBinarizedVectorAndQueryData(
+  DocsWithFieldSet writeBinarizedVectorAndQueryData(
       IndexOutput binarizedVectorData,
       IndexOutput binarizedQueryData,
       FloatVectorValues floatVectorValues,
       float[] centroid,
       OptimizedScalarQuantizer binaryQuantizer)
       throws IOException {
-    int discretizedDimension = discretize(floatVectorValues.dimension(), 64);
     DocsWithFieldSet docsWithField = new DocsWithFieldSet();
+    assert queryBits <= 8 : "If queryBits > 8, quantizationScratch needs to be updated to hold > 1 byte query vector";
     byte[][] quantizationScratch = new byte[2][floatVectorValues.dimension()];
-    byte[] toIndex = new byte[discretizedDimension / 8];
-    byte[] toQuery = new byte[(discretizedDimension / 8) * QUERY_BITS];
     KnnVectorValues.DocIndexIterator iterator = floatVectorValues.iterator();
     for (int docV = iterator.nextDoc(); docV != NO_MORE_DOCS; docV = iterator.nextDoc()) {
       // write index vector
@@ -370,11 +368,9 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
           binaryQuantizer.multiScalarQuantize(
               floatVectorValues.vectorValue(iterator.index()),
               quantizationScratch,
-              new byte[] {INDEX_BITS, QUERY_BITS},
+              new byte[] {indexBits, queryBits},
               centroid);
-      // pack and store document bit vector
-      packAsBinary(quantizationScratch[0], toIndex);
-      binarizedVectorData.writeBytes(toIndex, toIndex.length);
+      binarizedVectorData.writeBytes(quantizationScratch[0], floatVectorValues.dimension());
       binarizedVectorData.writeInt(Float.floatToIntBits(r[0].lowerInterval()));
       binarizedVectorData.writeInt(Float.floatToIntBits(r[0].upperInterval()));
       binarizedVectorData.writeInt(Float.floatToIntBits(r[0].additionalCorrection()));
@@ -382,9 +378,8 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
       binarizedVectorData.writeShort((short) r[0].quantizedComponentSum());
       docsWithField.add(docV);
 
-      // pack and store the 4bit query vector
-      transposeHalfByte(quantizationScratch[1], toQuery);
-      binarizedQueryData.writeBytes(toQuery, toQuery.length);
+      // store the query vector
+      binarizedQueryData.writeBytes(quantizationScratch[1], floatVectorValues.dimension());
       binarizedQueryData.writeInt(Float.floatToIntBits(r[1].lowerInterval()));
       binarizedQueryData.writeInt(Float.floatToIntBits(r[1].upperInterval()));
       binarizedQueryData.writeInt(Float.floatToIntBits(r[1].additionalCorrection()));
@@ -742,13 +737,11 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
       this.slice = data;
       this.dimension = dimension;
       this.size = size;
-      // 4x the quantized binary dimensions
-      int binaryDimensions = (discretize(dimension, 64) / 8) * QUERY_BITS;
-      this.byteBuffer = ByteBuffer.allocate(binaryDimensions);
+      this.byteBuffer = ByteBuffer.allocate(dimension);
       this.binaryValue = byteBuffer.array();
       // + 1 for the quantized sum
       this.correctiveValues = new float[3];
-      this.byteSize = binaryDimensions + Float.BYTES * 3 + Short.BYTES;
+      this.byteSize = dimension + Float.BYTES * 3 + Short.BYTES;
     }
 
     public OptimizedScalarQuantizer.QuantizationResult getCorrectiveTerms(int targetOrd)
@@ -797,21 +790,21 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
 
   static class BinarizedFloatVectorValues extends BinarizedByteVectorValues {
     private OptimizedScalarQuantizer.QuantizationResult corrections;
-    private final byte[] binarized;
     private final byte[] initQuantized;
     private final float[] centroid;
     private final FloatVectorValues values;
     private final OptimizedScalarQuantizer quantizer;
+    private final byte indexBits;
 
     private int lastOrd = -1;
 
     BinarizedFloatVectorValues(
-        FloatVectorValues delegate, OptimizedScalarQuantizer quantizer, float[] centroid) {
+        FloatVectorValues delegate, OptimizedScalarQuantizer quantizer, float[] centroid, byte indexBits) {
       this.values = delegate;
       this.quantizer = quantizer;
-      this.binarized = new byte[discretize(delegate.dimension(), 64) / 8];
       this.initQuantized = new byte[delegate.dimension()];
       this.centroid = centroid;
+      this.indexBits = indexBits;
     }
 
     @Override
@@ -829,10 +822,10 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
     @Override
     public byte[] vectorValue(int ord) throws IOException {
       if (ord != lastOrd) {
-        binarize(ord);
+        quantize(ord);
         lastOrd = ord;
       }
-      return binarized;
+      return initQuantized;
     }
 
     @Override
@@ -862,13 +855,12 @@ public class Lucene102BinaryQuantizedVectorsWriter extends FlatVectorsWriter {
 
     @Override
     public BinarizedByteVectorValues copy() throws IOException {
-      return new BinarizedFloatVectorValues(values.copy(), quantizer, centroid);
+      return new BinarizedFloatVectorValues(values.copy(), quantizer, centroid, indexBits);
     }
 
-    private void binarize(int ord) throws IOException {
+    private void quantize(int ord) throws IOException {
       corrections =
-          quantizer.scalarQuantize(values.vectorValue(ord), initQuantized, INDEX_BITS, centroid);
-      packAsBinary(initQuantized, binarized);
+          quantizer.scalarQuantize(values.vectorValue(ord), initQuantized, indexBits, centroid);
     }
 
     @Override

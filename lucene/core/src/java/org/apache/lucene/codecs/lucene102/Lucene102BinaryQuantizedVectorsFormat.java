@@ -89,9 +89,6 @@ import org.apache.lucene.index.SegmentWriteState;
  */
 public class Lucene102BinaryQuantizedVectorsFormat extends FlatVectorsFormat {
 
-  public static final byte QUERY_BITS = 4;
-  public static final byte INDEX_BITS = 1;
-
   public static final String BINARIZED_VECTOR_COMPONENT = "BVEC";
   public static final String NAME = "Lucene102BinaryQuantizedVectorsFormat";
 
@@ -106,18 +103,29 @@ public class Lucene102BinaryQuantizedVectorsFormat extends FlatVectorsFormat {
   private static final FlatVectorsFormat rawVectorFormat =
       new Lucene99FlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
 
-  private static final Lucene102BinaryFlatVectorsScorer scorer =
-      new Lucene102BinaryFlatVectorsScorer(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
+  private final Lucene102BinaryFlatVectorsScorer scorer;
+  public static final byte DEFAULT_INDEX_BITS = 1;
+  public static final byte DEFAULT_QUERY_BITS = 4;
+
+  private final byte queryBits;
+  private final byte indexBits;
 
   /** Creates a new instance with the default number of vectors per cluster. */
   public Lucene102BinaryQuantizedVectorsFormat() {
+    this(DEFAULT_INDEX_BITS, DEFAULT_QUERY_BITS);
+  }
+
+  public Lucene102BinaryQuantizedVectorsFormat(byte indexBits, byte queryBits) {
     super(NAME);
+    this.queryBits = queryBits;
+    this.indexBits = indexBits;
+    this.scorer = new Lucene102BinaryFlatVectorsScorer(FlatVectorScorerUtil.getLucene99FlatVectorsScorer(), queryBits);
   }
 
   @Override
   public FlatVectorsWriter fieldsWriter(SegmentWriteState state) throws IOException {
     return new Lucene102BinaryQuantizedVectorsWriter(
-        scorer, rawVectorFormat.fieldsWriter(state), state);
+        scorer, rawVectorFormat.fieldsWriter(state), state, indexBits, queryBits);
   }
 
   @Override

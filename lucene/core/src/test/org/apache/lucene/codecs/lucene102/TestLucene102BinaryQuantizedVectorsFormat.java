@@ -16,16 +16,6 @@
  */
 package org.apache.lucene.codecs.lucene102;
 
-import static java.lang.String.format;
-import static org.apache.lucene.codecs.lucene102.Lucene102BinaryQuantizedVectorsFormat.INDEX_BITS;
-import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
-import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.discretize;
-import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.packAsBinary;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.oneOf;
-
-import java.io.IOException;
-import java.util.Locale;
 import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.codecs.FilterCodec;
 import org.apache.lucene.codecs.KnnVectorsFormat;
@@ -49,9 +39,19 @@ import org.apache.lucene.tests.index.BaseKnnVectorsFormatTestCase;
 import org.apache.lucene.tests.util.TestUtil;
 import org.apache.lucene.util.quantization.OptimizedScalarQuantizer;
 
+import java.io.IOException;
+import java.util.Locale;
+
+import static java.lang.String.format;
+import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
+import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.discretize;
+import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.packAsBinary;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.oneOf;
+
 public class TestLucene102BinaryQuantizedVectorsFormat extends BaseKnnVectorsFormatTestCase {
 
-  private static final KnnVectorsFormat FORMAT = new Lucene102BinaryQuantizedVectorsFormat();
+  private static final KnnVectorsFormat FORMAT = new Lucene102BinaryQuantizedVectorsFormat((byte) 2, (byte) 4);
 
   @Override
   protected Codec getCodec() {
@@ -94,7 +94,7 @@ public class TestLucene102BinaryQuantizedVectorsFormat extends BaseKnnVectorsFor
         new FilterCodec("foo", Codec.getDefault()) {
           @Override
           public KnnVectorsFormat knnVectorsFormat() {
-            return new Lucene102BinaryQuantizedVectorsFormat();
+            return new Lucene102BinaryQuantizedVectorsFormat((byte) 2, (byte) 4);
           }
         };
     String expectedPattern =
@@ -157,22 +157,21 @@ public class TestLucene102BinaryQuantizedVectorsFormat extends BaseKnnVectorsFor
 
           OptimizedScalarQuantizer quantizer = new OptimizedScalarQuantizer(similarityFunction);
           byte[] quantizedVector = new byte[dims];
-          byte[] expectedVector = new byte[discretize(dims, 64) / 8];
           if (similarityFunction == VectorSimilarityFunction.COSINE) {
             vectorValues =
                 new Lucene102BinaryQuantizedVectorsWriter.NormalizedFloatVectorValues(vectorValues);
           }
           KnnVectorValues.DocIndexIterator docIndexIterator = vectorValues.iterator();
 
+          byte indexBits = (byte) 2;
           while (docIndexIterator.nextDoc() != NO_MORE_DOCS) {
             OptimizedScalarQuantizer.QuantizationResult corrections =
                 quantizer.scalarQuantize(
                     vectorValues.vectorValue(docIndexIterator.index()),
                     quantizedVector,
-                    INDEX_BITS,
+                    indexBits,
                     centroid);
-            packAsBinary(quantizedVector, expectedVector);
-            assertArrayEquals(expectedVector, qvectorValues.vectorValue(docIndexIterator.index()));
+            assertArrayEquals(quantizedVector, qvectorValues.vectorValue(docIndexIterator.index()));
             assertEquals(corrections, qvectorValues.getCorrectiveTerms(docIndexIterator.index()));
           }
         }

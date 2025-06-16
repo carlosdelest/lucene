@@ -16,10 +16,11 @@
  */
 package org.apache.lucene.codecs.lucene102;
 
-import static org.apache.lucene.codecs.lucene102.Lucene102BinaryQuantizedVectorsFormat.QUERY_BITS;
+import static org.apache.lucene.codecs.lucene102.Lucene102BinaryQuantizedVectorsFormat.DEFAULT_QUERY_BITS;
 import static org.apache.lucene.index.VectorSimilarityFunction.COSINE;
 import static org.apache.lucene.index.VectorSimilarityFunction.EUCLIDEAN;
 import static org.apache.lucene.index.VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT;
+import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.packAsBinary;
 import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.transposeHalfByte;
 
 import java.io.IOException;
@@ -37,10 +38,11 @@ import org.apache.lucene.util.quantization.OptimizedScalarQuantizer.Quantization
 /** Vector scorer over binarized vector values */
 public class Lucene102BinaryFlatVectorsScorer implements FlatVectorsScorer {
   private final FlatVectorsScorer nonQuantizedDelegate;
-  private static final float FOUR_BIT_SCALE = 1f / ((1 << 4) - 1);
+    private final byte queryBits;
 
-  public Lucene102BinaryFlatVectorsScorer(FlatVectorsScorer nonQuantizedDelegate) {
+  public Lucene102BinaryFlatVectorsScorer(FlatVectorsScorer nonQuantizedDelegate, byte queryBits) {
     this.nonQuantizedDelegate = nonQuantizedDelegate;
+    this.queryBits = queryBits;
   }
 
   @Override
@@ -67,16 +69,14 @@ public class Lucene102BinaryFlatVectorsScorer implements FlatVectorsScorer {
         VectorUtil.l2normalize(copy);
       }
       target = copy;
-      byte[] initial = new byte[target.length];
-      byte[] quantized = new byte[QUERY_BITS * binarizedVectors.discretizedDimensions() / 8];
+      byte[] quantized = new byte[target.length];
       OptimizedScalarQuantizer.QuantizationResult queryCorrections =
-          quantizer.scalarQuantize(target, initial, (byte) 4, centroid);
-      transposeHalfByte(initial, quantized);
+          quantizer.scalarQuantize(target, quantized, queryBits, centroid);
       return new RandomVectorScorer.AbstractRandomVectorScorer(binarizedVectors) {
         @Override
         public float score(int node) throws IOException {
           return quantizedScore(
-              quantized, queryCorrections, binarizedVectors, node, similarityFunction);
+              quantized, queryCorrections, binarizedVectors, node, similarityFunction, queryBits);
         }
       };
     }
@@ -95,7 +95,7 @@ public class Lucene102BinaryFlatVectorsScorer implements FlatVectorsScorer {
       Lucene102BinaryQuantizedVectorsWriter.OffHeapBinarizedQueryVectorValues scoringVectors,
       BinarizedByteVectorValues targetVectors) {
     return new BinarizedRandomVectorScorerSupplier(
-        scoringVectors, targetVectors, similarityFunction);
+        scoringVectors, targetVectors, similarityFunction, queryBits);
   }
 
   @Override
@@ -109,14 +109,17 @@ public class Lucene102BinaryFlatVectorsScorer implements FlatVectorsScorer {
         queryVectors;
     private final BinarizedByteVectorValues targetVectors;
     private final VectorSimilarityFunction similarityFunction;
+    private final byte queryBits;
 
-    BinarizedRandomVectorScorerSupplier(
+      BinarizedRandomVectorScorerSupplier(
         Lucene102BinaryQuantizedVectorsWriter.OffHeapBinarizedQueryVectorValues queryVectors,
         BinarizedByteVectorValues targetVectors,
-        VectorSimilarityFunction similarityFunction) {
+        VectorSimilarityFunction similarityFunction,
+        byte queryBits) {
       this.queryVectors = queryVectors;
       this.targetVectors = targetVectors;
       this.similarityFunction = similarityFunction;
+      this.queryBits = queryBits;
     }
 
     @Override
@@ -139,7 +142,7 @@ public class Lucene102BinaryFlatVectorsScorer implements FlatVectorsScorer {
           if (vector == null || queryCorrections == null) {
             throw new IllegalStateException("setScoringOrdinal was not called");
           }
-          return quantizedScore(vector, queryCorrections, targetVectors, node, similarityFunction);
+          return quantizedScore(vector, queryCorrections, targetVectors, node, similarityFunction, queryBits);
         }
       };
     }
@@ -147,7 +150,7 @@ public class Lucene102BinaryFlatVectorsScorer implements FlatVectorsScorer {
     @Override
     public RandomVectorScorerSupplier copy() throws IOException {
       return new BinarizedRandomVectorScorerSupplier(
-          queryVectors.copy(), targetVectors.copy(), similarityFunction);
+          queryVectors.copy(), targetVectors.copy(), similarityFunction, queryBits);
     }
   }
 
@@ -156,10 +159,12 @@ public class Lucene102BinaryFlatVectorsScorer implements FlatVectorsScorer {
       OptimizedScalarQuantizer.QuantizationResult queryCorrections,
       BinarizedByteVectorValues targetVectors,
       int targetOrd,
-      VectorSimilarityFunction similarityFunction)
+      VectorSimilarityFunction similarityFunction,
+      byte queryBits)
       throws IOException {
-    byte[] binaryCode = targetVectors.vectorValue(targetOrd);
-    float qcDist = VectorUtil.int4BitDotProduct(quantizedQuery, binaryCode);
+    float bitScale = 1f / ((1 << queryBits) - 1);
+    byte[] vectorValue = targetVectors.vectorValue(targetOrd);
+    float qcDist = VectorUtil.dotProduct(quantizedQuery, vectorValue);
     OptimizedScalarQuantizer.QuantizationResult indexCorrections =
         targetVectors.getCorrectiveTerms(targetOrd);
     float x1 = indexCorrections.quantizedComponentSum();
@@ -167,7 +172,7 @@ public class Lucene102BinaryFlatVectorsScorer implements FlatVectorsScorer {
     // Here we assume `lx` is simply bit vectors, so the scaling isn't necessary
     float lx = indexCorrections.upperInterval() - ax;
     float ay = queryCorrections.lowerInterval();
-    float ly = (queryCorrections.upperInterval() - ay) * FOUR_BIT_SCALE;
+    float ly = (queryCorrections.upperInterval() - ay) * bitScale;
     float y1 = queryCorrections.quantizedComponentSum();
     float score =
         ax * ay * targetVectors.dimension() + ay * lx * x1 + ax * ly * y1 + lx * ly * qcDist;

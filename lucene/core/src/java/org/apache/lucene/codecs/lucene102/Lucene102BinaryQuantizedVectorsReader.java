@@ -135,17 +135,16 @@ class Lucene102BinaryQuantizedVectorsReader extends FlatVectorsReader {
               + fieldEntry.dimension);
     }
 
-    int binaryDims = discretize(dimension, 64) / 8;
     long numQuantizedVectorBytes =
-        Math.multiplyExact((binaryDims + (Float.BYTES * 3) + Short.BYTES), (long) fieldEntry.size);
+        Math.multiplyExact((dimension + (Float.BYTES * 3) + Short.BYTES), (long) fieldEntry.size);
     if (numQuantizedVectorBytes != fieldEntry.vectorDataLength) {
       throw new IllegalStateException(
           "Binarized vector data length "
               + fieldEntry.vectorDataLength
               + " not matching size = "
               + fieldEntry.size
-              + " * (binaryBytes="
-              + binaryDims
+              + " * (dimension="
+              + dimension
               + " + 14"
               + ") = "
               + numQuantizedVectorBytes);
@@ -337,7 +336,6 @@ class Lucene102BinaryQuantizedVectorsReader extends FlatVectorsReader {
       VectorSimilarityFunction similarityFunction,
       VectorEncoding vectorEncoding,
       int dimension,
-      int descritizedDimension,
       long vectorDataOffset,
       long vectorDataLength,
       int size,
@@ -369,7 +367,6 @@ class Lucene102BinaryQuantizedVectorsReader extends FlatVectorsReader {
           similarityFunction,
           vectorEncoding,
           dimension,
-          discretize(dimension, 64),
           vectorDataOffset,
           vectorDataLength,
           size,

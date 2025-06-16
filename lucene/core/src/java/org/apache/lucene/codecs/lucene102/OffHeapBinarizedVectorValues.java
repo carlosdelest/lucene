@@ -55,7 +55,6 @@ public abstract class OffHeapBinarizedVectorValues extends BinarizedByteVectorVa
   final OptimizedScalarQuantizer binaryQuantizer;
   final float[] centroid;
   final float centroidDp;
-  private final int discretizedDimensions;
 
   OffHeapBinarizedVectorValues(
       int dimension,
@@ -73,13 +72,12 @@ public abstract class OffHeapBinarizedVectorValues extends BinarizedByteVectorVa
     this.slice = slice;
     this.centroid = centroid;
     this.centroidDp = centroidDp;
-    this.numBytes = discretize(dimension, 64) / 8;
+    this.numBytes = dimension;
     this.correctiveValues = new float[3];
     this.byteSize = numBytes + (Float.BYTES * 3) + Short.BYTES;
     this.byteBuffer = ByteBuffer.allocate(numBytes);
     this.binaryValue = byteBuffer.array();
     this.binaryQuantizer = quantizer;
-    this.discretizedDimensions = discretize(dimension, 64);
   }
 
   @Override
@@ -107,7 +105,7 @@ public abstract class OffHeapBinarizedVectorValues extends BinarizedByteVectorVa
 
   @Override
   public int discretizedDimensions() {
-    return discretizedDimensions;
+    return dimension;
   }
 
   @Override
