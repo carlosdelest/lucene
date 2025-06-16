@@ -38,20 +38,27 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.tests.index.BaseKnnVectorsFormatTestCase;
 import org.apache.lucene.tests.util.TestUtil;
 import org.apache.lucene.util.quantization.OptimizedScalarQuantizer;
+import org.junit.BeforeClass;
 
 import java.io.IOException;
 import java.util.Locale;
 
 import static java.lang.String.format;
 import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
-import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.discretize;
-import static org.apache.lucene.util.quantization.OptimizedScalarQuantizer.packAsBinary;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.oneOf;
 
 public class TestLucene102BinaryQuantizedVectorsFormat extends BaseKnnVectorsFormatTestCase {
 
-  private static final KnnVectorsFormat FORMAT = new Lucene102BinaryQuantizedVectorsFormat((byte) 2, (byte) 4);
+  private static KnnVectorsFormat FORMAT;
+  private static byte INDEX_BITS;
+
+    @BeforeClass
+  public static void beforeClass() throws Exception {
+    INDEX_BITS = (byte) random().nextInt(1, 6);
+    byte queryBits = (byte) random().nextInt(INDEX_BITS + 1, 8);
+    FORMAT = new Lucene102BinaryQuantizedVectorsFormat(INDEX_BITS, queryBits);
+  }
 
   @Override
   protected Codec getCodec() {
@@ -163,13 +170,12 @@ public class TestLucene102BinaryQuantizedVectorsFormat extends BaseKnnVectorsFor
           }
           KnnVectorValues.DocIndexIterator docIndexIterator = vectorValues.iterator();
 
-          byte indexBits = (byte) 2;
           while (docIndexIterator.nextDoc() != NO_MORE_DOCS) {
             OptimizedScalarQuantizer.QuantizationResult corrections =
                 quantizer.scalarQuantize(
                     vectorValues.vectorValue(docIndexIterator.index()),
                     quantizedVector,
-                    indexBits,
+                        INDEX_BITS,
                     centroid);
             assertArrayEquals(quantizedVector, qvectorValues.vectorValue(docIndexIterator.index()));
             assertEquals(corrections, qvectorValues.getCorrectiveTerms(docIndexIterator.index()));
